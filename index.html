@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Breath Hold">
+<meta name="theme-color" content="#eef3f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1417" media="(prefers-color-scheme: dark)">
+<title>Breath Hold Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&family=Red+Hat+Display:wght@600;800&display=swap">
+<style>
+/* Layout: one phone-first column; the session view is a full-height instrument panel (cue, timer, breathing trace). */
+:root {
+  --bg: #eef3f4;
+  --surface: #ffffff;
+  --ink: #132429;
+  --muted: #566a71;
+  --line: #d3dde0;
+  --accent: #0e6b75;
+  --accent-ink: #ffffff;
+  --on: #1d8547;
+  --off: #b8650f;
+  --font-display: "Red Hat Display", system-ui, -apple-system, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1417;
+    --surface: #132227;
+    --ink: #e2ecef;
+    --muted: #8ea3aa;
+    --line: #25373d;
+    --accent: #4fb3bd;
+    --accent-ink: #062226;
+    --on: #4cc27f;
+    --off: #e59a45;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.5 var(--font-body);
+  -webkit-text-size-adjust: 100%;
+}
+[hidden] { display: none !important; }
+
+.wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100%;
+  padding-block: max(20px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; font-weight: 700; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 34em; }
+.eyebrow {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent); font-weight: 700;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+ol.steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; }
+ol.steps li::marker { color: var(--accent); font-weight: 700; }
+
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label, .field .label { font-size: 0.85rem; color: var(--muted); }
+.field.full { grid-column: 1 / -1; }
+select, input[type="range"] { width: 100%; font: inherit; }
+select {
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink);
+}
+input[type="range"] { accent-color: var(--accent); }
+.range-row { display: flex; align-items: center; gap: 12px; }
+.range-row output { font-family: var(--font-mono); min-width: 3.2em; text-align: right; }
+.check { display: flex; gap: 10px; align-items: center; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+button {
+  font: 700 1rem var(--font-body);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 12px 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.big { padding: 16px 28px; font-size: 1.1rem; flex: 1 1 auto; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.link { background: none; border: none; padding: 6px 0; color: var(--accent); text-decoration: underline; }
+
+.note { font-size: 0.9rem; color: var(--muted); }
+.error {
+  border: 1px solid var(--off);
+  background: color-mix(in srgb, var(--off) 10%, var(--surface));
+  border-radius: 12px; padding: 12px 14px;
+}
+.error strong { color: var(--off); }
+
+.history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.history li {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.history li:first-child { border-top: none; }
+.history .when { color: var(--muted); }
+
+/* Session */
+#session { height: 100%; }
+#session .wrap { height: 100%; gap: 12px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.chip {
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 4px 10px;
+}
+.topbar button { padding: 8px 14px; font-size: 0.9rem; }
+.cue { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.6rem, 7vw, 2.3rem); line-height: 1.1; min-height: 2.3em; text-wrap: balance; }
+.readouts { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.timer { font-family: var(--font-mono); font-size: clamp(2.6rem, 14vw, 4rem); line-height: 1; font-variant-numeric: tabular-nums; }
+.gate {
+  font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 0.95rem;
+  background: var(--line); color: var(--ink);
+}
+.gate.on { background: var(--on); color: var(--surface); }
+.gate.off { background: var(--off); color: var(--surface); }
+.chart-box { flex: 1 1 auto; min-height: 220px; position: relative; }
+#chart {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+}
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.level { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+#demoBtn { width: 100%; padding: 18px; user-select: none; -webkit-user-select: none; touch-action: none; }
+#demoBtn.held { background: var(--on); color: var(--surface); border-color: var(--on); }
+
+/* Summary */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+.stat .v { font-family: var(--font-mono); font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.stat .k { font-size: 0.8rem; color: var(--muted); }
+.table-box { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
+
+@media (max-width: 380px) {
+  .fields { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Start screen -->
+<main id="intro">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Deep inspiration breath hold</p>
+      <h1>Breath Hold Coach</h1>
+    </div>
+    <p class="lede">Practise the deep breath hold used in breast radiotherapy. Your phone rests on your chest, measures how high your breath lifts it, and tells you by sound whether you are holding above the line.</p>
+
+    <div id="error" class="error" hidden role="alert"></div>
+
+    <section class="panel">
+      <h2>Before you start</h2>
+      <ol class="steps">
+        <li>Turn the ringer on (silent switch off) and turn the volume up.</li>
+        <li>Lie on your back, arms where your treatment team positions them.</li>
+        <li>Place the phone screen up, flat on the lower part of your breastbone, top edge towards your chin.</li>
+        <li>Breathe into your chest, not your belly, unless your team told you otherwise.</li>
+      </ol>
+      <p class="note">The app first checks the signal, then asks for one minute of calm breathing and three deep breaths to learn your range. Practice starts on its own after that.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Session</h2>
+      <div class="fields">
+        <div class="field">
+          <label for="holds">Holds</label>
+          <select id="holds"><option>3</option><option>4</option><option>5</option><option>6</option></select>
+        </div>
+        <div class="field">
+          <label for="holdSec">Hold length</label>
+          <select id="holdSec">
+            <option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option>
+            <option value="25">25 s</option><option value="30">30 s</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="restSec">Rest between holds</label>
+          <select id="restSec">
+            <option value="20">20 s</option><option value="30">30 s</option><option value="40">40 s</option>
+            <option value="60">60 s</option><option value="90">90 s</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="label">Feedback</span>
+          <label class="check"><input type="checkbox" id="voice"> Spoken cues</label>
+          <label class="check"><input type="checkbox" id="tone"> Tone above line</label>
+        </div>
+        <div class="field full">
+          <label for="target">Target line (share of your deepest breath)</label>
+          <div class="range-row">
+            <input type="range" id="target" min="50" max="90" step="5">
+            <output id="targetOut" for="target"></output>
+          </div>
+        </div>
+      </div>
+      <p class="note">Start with shorter holds and add 5 seconds at a time. Most treatment holds are 20 to 25 seconds. Three or four holds per session is enough.</p>
+    </section>
+
+    <div class="actions">
+      <button id="start" class="primary big">Start</button>
+      <button id="testSound">Test sound</button>
+    </div>
+    <button id="demo" class="link">Try it without the sensor (demo mode)</button>
+
+    <section class="panel" id="historyPanel" hidden>
+      <h2>Recent sessions</h2>
+      <ul class="history" id="history"></ul>
+    </section>
+
+    <p class="note"><strong>Practice only.</strong> This app does not connect to or match any treatment machine, and its percentages are not your clinical threshold. Stop and breathe normally if you feel dizzy or short of breath. Check with your treatment team before practising if you have heart or lung problems.</p>
+  </div>
+</main>
+
+<!-- Live session -->
+<main id="session" hidden>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="chip" id="chip">Signal check</span>
+      <button id="stop">Stop</button>
+    </div>
+    <div class="cue" id="cue" aria-live="polite">Lie still and breathe normally</div>
+    <div class="readouts">
+      <div class="timer" id="timer">0</div>
+      <span class="gate" id="gate" hidden>Beam on</span>
+    </div>
+    <div class="chart-box"><canvas id="chart" aria-label="Breathing trace with target line"></canvas></div>
+    <button id="demoBtn" hidden>Hold here to breathe in</button>
+    <div class="foot">
+      <span class="level" id="level">&nbsp;</span>
+      <button id="recal" class="link">Recalibrate</button>
+    </div>
+  </div>
+</main>
+
+<!-- Summary -->
+<main id="summary" hidden>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Session done</p>
+      <h1 id="sumTitle">Nice work</h1>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="sBeam">–</div><div class="k">time above line</div></div>
+      <div class="stat"><div class="v" id="sHolds">–</div><div class="k">holds done</div></div>
+      <div class="stat"><div class="v" id="sWobble">–</div><div class="k">average wobble</div></div>
+    </div>
+    <section class="panel">
+      <h2>Each hold</h2>
+      <div class="table-box">
+        <table>
+          <thead><tr><th>Hold</th><th>Length</th><th>Above line</th><th>Avg level</th><th>Wobble</th><th>Drops</th></tr></thead>
+          <tbody id="sumRows"></tbody>
+        </table>
+      </div>
+      <p class="note">Above line is the share of the hold your breath stayed over the target, which is when the treatment beam would run. Wobble is how much your breath level moved during the hold; lower is steadier. Drops counts the times you fell below the line.</p>
+    </section>
+    <div class="actions">
+      <button id="again" class="primary big">Practise again</button>
+      <button id="home">Back to start</button>
+    </div>
+  </div>
+</main>
+
+<script id="core">
+// Pure signal-processing helpers. No DOM access, so they can be tested with Node.
+const Core = (() => {
+  const DEG = 180 / Math.PI;
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const mean = a => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : NaN);
+  const sd = a => {
+    if (a.length < 2) return 0;
+    const m = mean(a);
+    return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1));
+  };
+  const quantile = (a, q) => {
+    if (!a.length) return NaN;
+    const s = [...a].sort((x, y) => x - y);
+    const i = (s.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+    return s[lo] + (s[hi] - s[lo]) * (i - lo);
+  };
+
+  // Phone tilt from the gravity vector, in degrees: [pitch (top edge up/down), roll (side to side)].
+  function tilt(ax, ay, az) {
+    const g = Math.hypot(ax, ay, az) || 1;
+    return [Math.asin(clamp(ay / g, -1, 1)) * DEG, Math.asin(clamp(ax / g, -1, 1)) * DEG];
+  }
+
+  // Time-based exponential smoother; tau in seconds.
+  function makeSmoother(tau) {
+    let v = null, last = 0;
+    return {
+      update(x, t) {
+        if (v === null) { v = x; last = t; return v; }
+        const dt = Math.max(0, t - last);
+        last = t;
+        v += (1 - Math.exp(-dt / tau)) * (x - v);
+        return v;
+      },
+      reset() { v = null; },
+    };
+  }
+
+  // Learn the breathing axis and range from calm breathing and deep-hold tilt samples ([pitch, roll] pairs).
+  // 0 % = median calm breathing, 100 % = median deep hold.
+  function calibrate(baseline, holds, minRangeDeg = 0.4) {
+    if (baseline.length < 20 || holds.length < 20) return { ok: false, reason: 'few-samples' };
+    const origin = [mean(baseline.map(s => s[0])), mean(baseline.map(s => s[1]))];
+    const dx = mean(holds.map(s => s[0])) - origin[0];
+    const dy = mean(holds.map(s => s[1])) - origin[1];
+    const n = Math.hypot(dx, dy);
+    if (n < 1e-6) return { ok: false, reason: 'weak', rangeDeg: 0 };
+    const axis = [dx / n, dy / n];
+    const proj = s => (s[0] - origin[0]) * axis[0] + (s[1] - origin[1]) * axis[1];
+    const zero = quantile(baseline.map(proj), 0.5);
+    const full = quantile(holds.map(proj), 0.5);
+    const cal = { origin, axis, zero, full, rangeDeg: full - zero };
+    if (cal.rangeDeg < minRangeDeg) return { ...cal, ok: false, reason: 'weak' };
+    return { ...cal, ok: true };
+  }
+
+  function level(s, cal) {
+    const p = (s[0] - cal.origin[0]) * cal.axis[0] + (s[1] - cal.origin[1]) * cal.axis[1];
+    return (100 * (p - cal.zero)) / (cal.full - cal.zero);
+  }
+
+  // Gate with hysteresis so noise at the line does not flicker on and off.
+  function gate(wasOn, lvl, target, hysteresis = 3) {
+    return wasOn ? lvl >= target - hysteresis : lvl >= target;
+  }
+
+  // samples: [{dt, level, on}] recorded during one hold.
+  function summarizeHold(samples) {
+    let total = 0, on = 0, drops = 0, prev = null;
+    const lv = [];
+    for (const s of samples) {
+      total += s.dt;
+      if (s.on) on += s.dt;
+      if (prev === true && !s.on) drops++;
+      prev = s.on;
+      lv.push(s.level);
+    }
+    return {
+      seconds: total,
+      onPct: total ? (100 * on) / total : 0,
+      meanLevel: lv.length ? mean(lv) : 0,
+      wobble: sd(lv),
+      drops,
+    };
+  }
+
+  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold };
+})();
+if (typeof module !== 'undefined') module.exports = Core;
+</script>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  // ---------- Settings and history (per-device conveniences) ----------
+  const DEFAULTS = { holds: 4, holdSec: 20, restSec: 40, target: 75, voice: true, tone: true };
+  const SETTINGS_KEY = 'dibh-coach.settings';
+  const HISTORY_KEY = 'dibh-coach.history';
+
+  function load(key, fallback) {
+    try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+  }
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
+  }
+
+  const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
+
+  function bindSettings() {
+    for (const k of ['holds', 'holdSec', 'restSec']) {
+      $(k).value = String(settings[k]);
+      $(k).addEventListener('change', () => { settings[k] = Number($(k).value); save(SETTINGS_KEY, settings); });
+    }
+    $('target').value = String(settings.target);
+    $('targetOut').textContent = settings.target + '%';
+    $('target').addEventListener('input', () => {
+      settings.target = Number($('target').value);
+      $('targetOut').textContent = settings.target + '%';
+      save(SETTINGS_KEY, settings);
+    });
+    for (const k of ['voice', 'tone']) {
+      $(k).checked = !!settings[k];
+      $(k).addEventListener('change', () => { settings[k] = $(k).checked; save(SETTINGS_KEY, settings); });
+    }
+  }
+
+  function renderHistory() {
+    const items = load(HISTORY_KEY, []);
+    $('historyPanel').hidden = !items.length;
+    const ul = $('history');
+    ul.textContent = '';
+    for (const h of items.slice(0, 6)) {
+      const li = document.createElement('li');
+      const when = document.createElement('span');
+      when.className = 'when';
+      when.textContent = new Date(h.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const what = document.createElement('span');
+      what.textContent = `${h.holds} × ${h.holdSec} s · ${Math.round(h.onPct)}% above line`;
+      li.append(when, what);
+      ul.append(li);
+    }
+  }
+
+  // ---------- Sound and voice ----------
+  const Sound = {
+    ctx: null, gain: null,
+    init() {
+      if (this.ctx) { this.ctx.resume?.(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      // Safari 17+: play even when the ringer switch is on silent.
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* unsupported */ }
+      this.ctx = new AC();
+      this.gain = this.ctx.createGain();
+      this.gain.gain.value = 0;
+      this.gain.connect(this.ctx.destination);
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 392;
+      osc.connect(this.gain);
+      osc.start();
+      this.ctx.resume?.();
+    },
+    tone(on) {
+      if (!this.ctx) return;
+      this.gain.gain.setTargetAtTime(on && settings.tone ? 0.1 : 0, this.ctx.currentTime, 0.06);
+    },
+    beep(freq, dur, delay = 0, vol = 0.35) {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime + delay;
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g).connect(this.ctx.destination);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    },
+    alert() { this.beep(660, 0.12); this.beep(660, 0.12, 0.2); },
+    chime() { this.beep(523, 0.2); this.beep(784, 0.35, 0.18); },
+  };
+
+  function speak(text) {
+    if (!settings.voice || !('speechSynthesis' in window)) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      speechSynthesis.speak(u);
+    } catch { /* speech unavailable */ }
+  }
+
+  // ---------- Screen wake lock ----------
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch { /* not granted */ }
+  }
+  function releaseAwake() { try { wakeLock?.release(); } catch { /* ignore */ } wakeLock = null; }
+
+  // ---------- Signal input (sensor or demo) ----------
+  const smP = Core.makeSmoother(0.25), smR = Core.makeSmoother(0.25);
+  const S = {
+    running: false, demo: false, latest: null, samples: 0,
+    cal: null, phase: '', phaseT: 0, phaseDur: 0, spoken: {},
+    calBase: [], calHold: [], calStep: 0,
+    holdIdx: 0, holdSamples: [], results: [], inReached: false,
+    level: null, gateOn: false, beepT: 0,
+    clock: 0, trace: [], rawRef: null,
+  };
+
+  function feed(p, r, t) {
+    S.latest = [smP.update(p, t), smR.update(r, t)];
+    S.samples++;
+  }
+
+  function onMotion(e) {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null || g.y == null || g.z == null) return;
+    const [p, r] = Core.tilt(g.x, g.y, g.z);
+    feed(p, r, performance.now() / 1000);
+  }
+
+  // Demo: a simulated chest. Pressing the button is a deep breath.
+  const Demo = { held: false, v: 0, timer: null };
+  function startDemo() {
+    $('demoBtn').hidden = false;
+    if (Demo.timer) return;
+    Demo.timer = setInterval(() => {
+      const t = performance.now() / 1000;
+      Demo.v += ((Demo.held ? 1 : 0) - Demo.v) * 0.05;
+      const tidal = Demo.held ? 0 : 0.12 * Math.sin((t * 2 * Math.PI) / 4.5);
+      const chest = Demo.v + tidal + (Math.random() - 0.5) * 0.03;
+      feed(0.4 + chest * 2.4, -0.3 + chest * 0.6, t);
+    }, 16);
+  }
+  function stopDemo() { clearInterval(Demo.timer); Demo.timer = null; Demo.held = false; $('demoBtn').hidden = true; }
+  const demoBtn = $('demoBtn');
+  const press = on => e => { e.preventDefault(); Demo.held = on; demoBtn.classList.toggle('held', on); };
+  demoBtn.addEventListener('pointerdown', press(true));
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) demoBtn.addEventListener(ev, press(false));
+
+  // ---------- Screens ----------
+  function show(id) {
+    for (const s of ['intro', 'session', 'summary']) $(s).hidden = s !== id;
+    window.scrollTo(0, 0);
+  }
+  function showError(html) { $('error').innerHTML = html; $('error').hidden = false; show('intro'); }
+  function hideError() { $('error').hidden = true; }
+
+  // ---------- Session sequencer ----------
+  const CAL_DEEP_BREATHS = 3;
+
+  function enter(phase, dur, chip, cue, say) {
+    S.phase = phase;
+    S.phaseT = 0;
+    S.phaseDur = dur;
+    S.spoken = {};
+    if (chip) $('chip').textContent = chip;
+    if (cue) $('cue').textContent = cue;
+    if (say) speak(say);
+  }
+
+  function startCalibration() {
+    S.cal = null; S.level = null; S.calBase = []; S.calHold = []; S.calStep = 0; S.rawRef = null;
+    S.trace = [];
+    enter('settle', 4, 'Signal check', 'Lie still and breathe normally', 'Lie still, and breathe normally.');
+  }
+
+  function startPractice() {
+    S.holdIdx = 0; S.results = []; S.trace = [];
+    enter('prep', 6, `Hold 1 of ${settings.holds}`, 'Breathe normally', `Practice starts. Hold 1 of ${settings.holds}. Breathe normally.`);
+  }
+
+  function startSession(reuseCal) {
+    S.running = true;
+    S.clock = 0;
+    show('session');
+    keepAwake();
+    if (reuseCal && S.cal) startPractice(); else startCalibration();
+    lastFrame = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  function stopSession() {
+    S.running = false;
+    Sound.tone(false);
+    try { speechSynthesis.cancel(); } catch { /* ignore */ }
+    releaseAwake();
+  }
+
+  function failCalibration(reason) {
+    stopSession();
+    stopDemo();
+    const range = S.lastCal?.rangeDeg;
+    const msgs = {
+      nosensor: '<strong>No motion data arrived.</strong> Open this page in Safari over <code>https://</code> and tap <em>Allow</em> when asked about motion access. If you tapped <em>Don’t Allow</em> before, close the tab, open the link again and tap Start.',
+      weak: `<strong>The phone barely moved when you breathed in</strong>${range != null ? ` (about ${Math.max(0, range).toFixed(1)}° between calm and deep breaths)` : ''}. Make sure the phone lies flat on the lower breastbone without sliding, breathe into your chest, and try again.`,
+      'few-samples': '<strong>Not enough data to calibrate.</strong> Keep the screen on and the page open during calibration, then try again.',
+    };
+    showError(msgs[reason] || msgs.weak);
+  }
+
+  function finishSession() {
+    stopSession();
+    stopDemo();
+    const res = S.results;
+    if (!res.length) { show('intro'); return; }
+    const total = res.reduce((s, r) => s + r.seconds, 0);
+    const onPct = total ? res.reduce((s, r) => s + (r.onPct * r.seconds) / total, 0) : 0;
+    const wobble = Core.mean(res.map(r => r.wobble));
+    $('sBeam').textContent = Math.round(onPct) + '%';
+    $('sHolds').textContent = `${res.length}/${settings.holds}`;
+    $('sWobble').textContent = wobble.toFixed(1);
+    $('sumTitle').textContent = onPct >= 90 ? 'Steady holds' : onPct >= 70 ? 'Good practice' : 'Keep practising';
+    const tbody = $('sumRows');
+    tbody.textContent = '';
+    res.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      for (const v of [i + 1, r.seconds.toFixed(0) + ' s', Math.round(r.onPct) + '%', Math.round(r.meanLevel) + '%', r.wobble.toFixed(1), r.drops]) {
+        const td = document.createElement('td');
+        td.textContent = String(v);
+        tr.append(td);
+      }
+      tbody.append(tr);
+    });
+    if (!S.demo) {
+      const hist = load(HISTORY_KEY, []);
+      hist.unshift({ date: Date.now(), holds: res.length, holdSec: settings.holdSec, target: settings.target, onPct, wobble });
+      save(HISTORY_KEY, hist.slice(0, 50));
+      renderHistory();
+    }
+    show('summary');
+  }
+
+  function remaining() { return Math.max(0, S.phaseDur - S.phaseT); }
+
+  function tick(dt) {
+    S.phaseT += dt;
+    const s = S.latest;
+    const done = S.phaseT >= S.phaseDur;
+
+    if (S.cal && s) {
+      S.level = Core.level(s, S.cal);
+      S.gateOn = Core.gate(S.gateOn, S.level, settings.target);
+    }
+
+    switch (S.phase) {
+      case 'settle':
+        if (done) {
+          if (S.samples < 10) return failCalibration('nosensor');
+          enter('baseline', 20, 'Calibrating', 'Breathe normally and relax', 'Breathe normally, and relax.');
+        }
+        break;
+      case 'baseline':
+        if (s) S.calBase.push(s);
+        if (done) {
+          S.calStep = 0;
+          enter('calIn', 4, `Deep breath 1 of ${CAL_DEEP_BREATHS}`, 'Breathe in deeply into your chest', 'Breathe in deeply, and hold.');
+        }
+        break;
+      case 'calIn':
+        if (done) enter('calHold', 6, null, 'Hold', null);
+        break;
+      case 'calHold':
+        if (s && S.phaseT >= 2.5) S.calHold.push(s);
+        if (done) enter('calRest', 8, null, 'Breathe out and relax', 'Breathe out, and relax.');
+        break;
+      case 'calRest':
+        if (done) {
+          S.calStep++;
+          if (S.calStep < CAL_DEEP_BREATHS) {
+            enter('calIn', 4, `Deep breath ${S.calStep + 1} of ${CAL_DEEP_BREATHS}`, 'Breathe in deeply into your chest', 'Breathe in deeply, and hold.');
+          } else {
+            const cal = Core.calibrate(S.calBase, S.calHold, S.demo ? 0.1 : 0.4);
+            S.lastCal = cal;
+            if (!cal.ok) return failCalibration(cal.reason);
+            S.cal = cal;
+            S.gateOn = false;
+            S.trace = [];
+            Sound.chime();
+            enter('calDone', 4, 'Calibrated', 'Calibrated. Get ready.', 'Calibration done.');
+          }
+        }
+        break;
+      case 'calDone':
+        if (done) startPractice();
+        break;
+      case 'prep':
+      case 'rest':
+        if (S.phase === 'rest' && remaining() <= 5 && !S.spoken.ready) { S.spoken.ready = true; speak('Get ready.'); }
+        if (done) {
+          S.inReached = false;
+          enter('in', 10, `Hold ${S.holdIdx + 1} of ${settings.holds}`, 'Breathe in deeply and hold', 'Breathe in deeply, and hold.');
+        }
+        break;
+      case 'in':
+        if (S.level != null && S.gateOn) S.inReached = true;
+        if (S.inReached || done) {
+          S.holdSamples = [];
+          S.beepT = 0;
+          enter('hold', settings.holdSec, null, 'Hold', null);
+        }
+        break;
+      case 'hold': {
+        if (S.level != null) S.holdSamples.push({ dt, level: S.level, on: S.gateOn });
+        if (!S.gateOn) {
+          S.beepT -= dt;
+          if (S.beepT <= 0) { Sound.alert(); S.beepT = 1.0; }
+        } else {
+          S.beepT = 0;
+        }
+        const left = remaining();
+        for (const [n, w] of [[3, 'three'], [2, 'two'], [1, 'one']]) {
+          if (left <= n && !S.spoken[n]) { S.spoken[n] = true; speak(w); }
+        }
+        if (done) {
+          S.results.push(Core.summarizeHold(S.holdSamples));
+          S.holdIdx++;
+          enter('out', 3, null, 'Relax and breathe out', 'And relax. Breathe out.');
+        }
+        break;
+      }
+      case 'out':
+        if (done) {
+          if (S.holdIdx >= settings.holds) return finishSession();
+          enter('rest', settings.restSec, `Rest · next hold ${S.holdIdx + 1} of ${settings.holds}`, 'Rest and breathe normally', null);
+        }
+        break;
+    }
+
+    // Feedback sound: steady tone while above the line during a hold attempt.
+    const active = S.phase === 'in' || S.phase === 'hold';
+    Sound.tone(active && S.gateOn);
+  }
+
+  // ---------- Rendering ----------
+  let lastFrame = 0;
+  const TRACE_SEC = 20;
+
+  function frame(now) {
+    if (!S.running) return;
+    const dt = Math.min(0.1, Math.max(0, (now - lastFrame) / 1000));
+    lastFrame = now;
+    S.clock += dt;
+    tick(dt);
+    if (!S.running) return;
+
+    if (S.latest) {
+      if (S.cal && S.level != null) {
+        S.trace.push({ t: S.clock, v: S.level });
+      } else {
+        if (!S.rawRef) S.rawRef = S.latest;
+        S.trace.push({ t: S.clock, v: (S.latest[0] - S.rawRef[0]) + (S.latest[1] - S.rawRef[1]) });
+      }
+      while (S.trace.length && S.trace[0].t < S.clock - TRACE_SEC) S.trace.shift();
+    }
+    renderPanel();
+    drawChart();
+    requestAnimationFrame(frame);
+  }
+
+  function renderPanel() {
+    const timed = ['settle', 'baseline', 'calIn', 'calHold', 'calRest', 'calDone', 'prep', 'hold', 'out', 'rest'];
+    $('timer').textContent = timed.includes(S.phase) ? String(Math.ceil(remaining())) : '–';
+    const gate = $('gate');
+    const active = S.phase === 'in' || S.phase === 'hold';
+    gate.hidden = !(S.cal && active);
+    gate.textContent = S.gateOn ? 'Beam on' : 'Beam paused';
+    gate.className = 'gate ' + (S.gateOn ? 'on' : 'off');
+    $('level').textContent = S.cal && S.level != null
+      ? `Breath level ${Math.round(S.level)}% · target ${settings.target}%`
+      : (S.samples ? 'Reading sensor…' : 'Waiting for sensor…');
+    $('recal').hidden = !S.cal;
+  }
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function drawChart() {
+    const c = $('chart');
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (!w || !h) return;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const col = { ink: css('--ink'), muted: css('--muted'), line: css('--line'), accent: css('--accent'), on: css('--on'), off: css('--off') };
+    const padT = 14, padB = 14, left = 12, ballX = w - 30;
+    let lo, hi;
+    if (S.cal) { lo = -25; hi = 130; } else {
+      const vs = S.trace.map(p => p.v);
+      lo = Math.min(-0.5, ...vs); hi = Math.max(0.5, ...vs);
+      const m = (hi - lo) * 0.15; lo -= m; hi += m;
+    }
+    const y = v => padT + ((hi - v) / (hi - lo)) * (h - padT - padB);
+    const x = t => ballX - ((S.clock - t) / TRACE_SEC) * (ballX - left);
+
+    ctx.font = `12px ${css('--font-body')}`;
+    ctx.textBaseline = 'bottom';
+    if (S.cal) {
+      ctx.setLineDash([4, 5]);
+      ctx.strokeStyle = col.line;
+      ctx.lineWidth = 1;
+      for (const [v, label] of [[0, 'calm breathing'], [100, 'deepest breath']]) {
+        ctx.beginPath(); ctx.moveTo(left, y(v)); ctx.lineTo(w - 8, y(v)); ctx.stroke();
+        ctx.fillStyle = col.muted; ctx.fillText(label, left + 2, y(v) - 3);
+      }
+      ctx.setLineDash([]);
+      ctx.strokeStyle = col.accent;
+      ctx.lineWidth = 2;
+      const ty = y(settings.target);
+      ctx.beginPath(); ctx.moveTo(left, ty); ctx.lineTo(w - 8, ty); ctx.stroke();
+      ctx.fillStyle = col.accent;
+      ctx.fillText(`target ${settings.target}%`, left + 2, ty - 3);
+    } else {
+      ctx.fillStyle = col.muted;
+      ctx.fillText('signal check', left + 2, padT + 14);
+    }
+
+    if (S.trace.length > 1) {
+      ctx.strokeStyle = col.ink;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      S.trace.forEach((p, i) => { const px = x(p.t), py = y(Core.clamp(p.v, lo, hi)); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    const last = S.trace[S.trace.length - 1];
+    if (last) {
+      const by = y(Core.clamp(last.v, lo, hi));
+      const active = S.phase === 'in' || S.phase === 'hold';
+      ctx.fillStyle = S.cal && active ? (S.gateOn ? col.on : col.off) : col.accent;
+      ctx.beginPath(); ctx.arc(ballX, by, 13, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // ---------- Pausing when the page is hidden ----------
+  const CAL_PHASES = ['settle', 'baseline', 'calIn', 'calHold', 'calRest'];
+  document.addEventListener('visibilitychange', () => {
+    if (!S.running) return;
+    if (document.visibilityState === 'hidden') { Sound.tone(false); return; }
+    keepAwake();
+    lastFrame = performance.now();
+    if (CAL_PHASES.includes(S.phase)) {
+      startCalibration();
+      speak('Calibration restarted.');
+    } else if (S.phase === 'in' || S.phase === 'hold') {
+      enter('rest', 10, `Rest · next hold ${S.holdIdx + 1} of ${settings.holds}`, 'Paused. This hold will restart.', 'Paused. This hold will restart.');
+    }
+  });
+
+  // ---------- Buttons ----------
+  function begin(demo) {
+    hideError();
+    // Everything that needs a tap happens here, before the first await.
+    Sound.init();
+    speak('Starting.');
+    S.demo = demo;
+    S.samples = 0; S.latest = null; smP.reset(); smR.reset();
+    if (demo) { startDemo(); startSession(false); return; }
+
+    if (!window.isSecureContext) {
+      showError('<strong>This page must be opened over <code>https://</code>.</strong> iPhone only gives motion data to secure pages. Use the https link from <code>serve.sh</code>.');
+      return;
+    }
+    if (typeof DeviceMotionEvent === 'undefined') {
+      showError('<strong>This browser has no motion sensor access.</strong> Open the page on your iPhone, or use demo mode to try it here.');
+      return;
+    }
+    const ask = typeof DeviceMotionEvent.requestPermission === 'function'
+      ? DeviceMotionEvent.requestPermission()
+      : Promise.resolve('granted');
+    ask.then(state => {
+      if (state !== 'granted') {
+        showError('<strong>Motion access was not allowed.</strong> Close this tab, open the link again, tap Start and choose <em>Allow</em>.');
+        return;
+      }
+      window.removeEventListener('devicemotion', onMotion);
+      window.addEventListener('devicemotion', onMotion);
+      startSession(false);
+    }).catch(err => {
+      showError(`<strong>Could not turn on the motion sensor.</strong> ${String(err && err.message || err)}`);
+    });
+  }
+
+  $('start').addEventListener('click', () => begin(false));
+  $('demo').addEventListener('click', () => begin(true));
+  $('testSound').addEventListener('click', () => {
+    Sound.init();
+    Sound.chime();
+    speak('This is how the coach sounds. If you cannot hear this, turn the ringer on and the volume up.');
+  });
+  $('stop').addEventListener('click', () => {
+    if (S.results.length) finishSession();
+    else { stopSession(); stopDemo(); show('intro'); }
+  });
+  $('recal').addEventListener('click', () => { S.results = []; startCalibration(); });
+  $('again').addEventListener('click', () => {
+    Sound.init();
+    speak('Starting.');
+    if (S.demo) startDemo();
+    startSession(true);
+  });
+  $('home').addEventListener('click', () => show('intro'));
+
+  bindSettings();
+  renderHistory();
+})();
+</script>
+</body>
+</html>

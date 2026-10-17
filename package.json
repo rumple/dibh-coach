@@ -1,0 +1,9 @@
+{
+  "name": "dibh-coach",
+  "private": true,
+  "description": "Breath hold practice app for radiotherapy patients, runs in the iPhone browser",
+  "scripts": {
+    "test": "node --test test/core.test.js",
+    "serve": "./serve.sh"
+  }
+}
