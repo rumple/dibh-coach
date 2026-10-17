@@ -18,8 +18,27 @@ clinical threshold.
 4. **Summary**: time above line, average level, wobble (standard deviation of level) and drops per hold.
    Recent sessions are kept in the browser's local storage.
 
-Everything is in `index.html` (no build step, no dependencies). Pure signal maths lives in the
-`<script id="core">` block and is tested with Node.
+The app is `index.html` (no build step, no dependencies). Pure signal maths lives in the
+`<script id="core">` block and is tested with Node. `server.py` serves it and collects logs.
+
+## Session logs
+
+Every session (completed, stopped early, or failed calibration) produces a detailed record:
+
+- settings, device user agent, outcome, start/end time
+- calibration: tilt range between calm and deep breaths (`rangeDeg`), calm-breathing and hold spread,
+  learned axis
+- each hold: time to reach the line, length, % above line, mean level, wobble, drops
+- phase events, and a 10 Hz trace: `t_s, pitch_deg, roll_deg, level_pct, beam_on, phase`
+
+Where they go:
+
+- **Phone**: the last 10 records stay in Safari's local storage. **Export log** (summary screen) and
+  **Export detailed logs** (start screen) open the share sheet with a `.json` and a `.csv` file.
+- **Mac**: when the page is served by `server.py` (via `serve.sh`), each record is posted to `/api/log`
+  and saved as `logs/<session id>.json`; the terminal prints a one-line summary. Records that could not be
+  sent are retried next time the page opens. `logs/` is git-ignored, and the server only serves the page
+  itself, so logs can't be fetched through the tunnel link.
 
 ## Test on an iPhone
 

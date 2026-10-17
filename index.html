@@ -253,6 +253,10 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
     <section class="panel" id="historyPanel" hidden>
       <h2>Recent sessions</h2>
       <ul class="history" id="history"></ul>
+      <div class="actions">
+        <button id="exportAll">Export detailed logs</button>
+      </div>
+      <p class="note" id="exportAllNote">Detailed logs of the last 10 sessions are kept on this phone.</p>
     </section>
 
     <p class="note"><strong>Practice only.</strong> This app does not connect to or match any treatment machine, and its percentages are not your clinical threshold. Stop and breathe normally if you feel dizzy or short of breath. Check with your treatment team before practising if you have heart or lung problems.</p>
@@ -302,8 +306,10 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       </div>
       <p class="note">Above line is the share of the hold your breath stayed over the target, which is when the treatment beam would run. Wobble is how much your breath level moved during the hold; lower is steadier. Drops counts the times you fell below the line.</p>
     </section>
+    <p class="note" id="uploadStatus" aria-live="polite"></p>
     <div class="actions">
       <button id="again" class="primary big">Practise again</button>
+      <button id="export">Export log</button>
       <button id="home">Back to start</button>
     </div>
   </div>
@@ -361,7 +367,7 @@ const Core = (() => {
     const proj = s => (s[0] - origin[0]) * axis[0] + (s[1] - origin[1]) * axis[1];
     const zero = quantile(baseline.map(proj), 0.5);
     const full = quantile(holds.map(proj), 0.5);
-    const cal = { origin, axis, zero, full, rangeDeg: full - zero };
+    const cal = { origin, axis, zero, full, rangeDeg: full - zero, calmSdDeg: sd(baseline.map(proj)), holdSdDeg: sd(holds.map(proj)) };
     if (cal.rangeDeg < minRangeDeg) return { ...cal, ok: false, reason: 'weak' };
     return { ...cal, ok: true };
   }
@@ -512,6 +518,120 @@ if (typeof module !== 'undefined') module.exports = Core;
   }
   function releaseAwake() { try { wakeLock?.release(); } catch { /* ignore */ } wakeLock = null; }
 
+  // ---------- Detailed session logs ----------
+  // Each session keeps calibration, per-hold stats, phase events and a 10 Hz trace.
+  // The last 10 records stay on the phone; each is also posted to api/log when served by server.py.
+  const LOGS_KEY = 'dibh-coach.logs';
+  const MAX_LOGS = 10;
+  const r1 = v => Math.round(v * 10) / 10;
+  const r2 = v => Math.round(v * 100) / 100;
+  const r3 = v => Math.round(v * 1000) / 1000;
+
+  function calInfo(cal, reused) {
+    if (!cal) return null;
+    const out = { reused: !!reused, ok: cal.ok !== false };
+    for (const k of ['rangeDeg', 'calmSdDeg', 'holdSdDeg', 'zero', 'full']) if (cal[k] != null) out[k] = r3(cal[k]);
+    if (cal.origin) out.origin = cal.origin.map(r3);
+    if (cal.axis) out.axis = cal.axis.map(r3);
+    return out;
+  }
+
+  function storeLogs(logs) {
+    // Drop the oldest records until the list fits in storage.
+    for (let list = logs.slice(0, MAX_LOGS); list.length; list = list.slice(0, -1)) {
+      try { localStorage.setItem(LOGS_KEY, JSON.stringify(list)); return; } catch { /* quota: try fewer */ }
+    }
+  }
+
+  const Rec = {
+    cur: null,
+    nextT: 0,
+    start(reusedCal) {
+      this.cur = {
+        app: 'dibh-coach', format: 1,
+        id: new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '-' + Math.random().toString(36).slice(2, 6),
+        startedAt: new Date().toISOString(),
+        demo: S.demo,
+        userAgent: navigator.userAgent,
+        settings: { ...settings },
+        outcome: 'running',
+        calibration: reusedCal ? calInfo(reusedCal, true) : null,
+        holds: [],
+        events: [],
+        traceColumns: ['t_s', 'pitch_deg', 'roll_deg', 'level_pct', 'beam_on', 'phase'],
+        trace: [],
+      };
+      this.nextT = 0;
+    },
+    event(name, extra) {
+      if (this.cur) this.cur.events.push({ t: r2(S.clock), name, ...extra });
+    },
+    sample() {
+      if (!this.cur || !S.latest || S.clock < this.nextT) return;
+      this.nextT = S.clock + 0.1;
+      this.cur.trace.push([r2(S.clock), r3(S.latest[0]), r3(S.latest[1]), S.level == null ? null : r1(S.level), S.gateOn ? 1 : 0, S.phase]);
+    },
+    finish(outcome, extra) {
+      const rec = this.cur;
+      if (!rec) return null;
+      this.cur = null;
+      Object.assign(rec, { outcome, endedAt: new Date().toISOString(), durationSec: r1(S.clock), uploaded: false }, extra);
+      storeLogs([rec, ...load(LOGS_KEY, [])]);
+      return rec;
+    },
+  };
+
+  function markUploaded(id) {
+    const logs = load(LOGS_KEY, []);
+    const rec = logs.find(r => r.id === id);
+    if (rec) { rec.uploaded = true; storeLogs(logs); }
+  }
+
+  async function upload(rec) {
+    try {
+      const res = await fetch('api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...rec, uploaded: true }) });
+      if (!res.ok) return null;
+      const body = await res.json();
+      markUploaded(rec.id);
+      return body.saved || 'logs';
+    } catch { return null; }
+  }
+
+  // Retry records that could not be uploaded earlier (e.g. the tunnel was down).
+  async function uploadPending() {
+    for (const rec of load(LOGS_KEY, []).filter(r => !r.uploaded)) {
+      if (!(await upload(rec))) return;
+    }
+  }
+
+  function toCSV(recs) {
+    const rows = ['session_id,' + recs[0].traceColumns.join(',')];
+    for (const rec of recs) for (const row of rec.trace) rows.push([rec.id, ...row.map(v => v == null ? '' : v)].join(','));
+    return rows.join('\n') + '\n';
+  }
+
+  // Share sheet on iPhone (Save to Files, AirDrop, Mail); falls back to downloads elsewhere.
+  async function exportLogs(recs, baseName) {
+    if (!recs.length) return 'empty';
+    const files = [
+      new File([JSON.stringify(recs.length === 1 ? recs[0] : recs, null, 1)], baseName + '.json', { type: 'application/json' }),
+      new File([toCSV(recs)], baseName + '.csv', { type: 'text/csv' }),
+    ];
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files, title: 'Breath hold log' }); return 'shared'; } catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; }
+    }
+    for (const f of files) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(f);
+      a.download = f.name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    }
+    return 'downloaded';
+  }
+
   // ---------- Signal input (sensor or demo) ----------
   const smP = Core.makeSmoother(0.25), smR = Core.makeSmoother(0.25);
   const S = {
@@ -570,6 +690,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     S.phaseT = 0;
     S.phaseDur = dur;
     S.spoken = {};
+    Rec.event('phase', { phase });
     if (chip) $('chip').textContent = chip;
     if (cue) $('cue').textContent = cue;
     if (say) speak(say);
@@ -591,7 +712,9 @@ if (typeof module !== 'undefined') module.exports = Core;
     S.clock = 0;
     show('session');
     keepAwake();
-    if (reuseCal && S.cal) startPractice(); else startCalibration();
+    const reuse = reuseCal && S.cal;
+    Rec.start(reuse ? S.cal : null);
+    if (reuse) startPractice(); else startCalibration();
     lastFrame = performance.now();
     requestAnimationFrame(frame);
   }
@@ -604,6 +727,8 @@ if (typeof module !== 'undefined') module.exports = Core;
   }
 
   function failCalibration(reason) {
+    Rec.finish('calibration-failed', { failReason: reason, calibration: calInfo(S.lastCal), samplesReceived: S.samples });
+    uploadPending();
     stopSession();
     stopDemo();
     const range = S.lastCal?.rangeDeg;
@@ -619,7 +744,17 @@ if (typeof module !== 'undefined') module.exports = Core;
     stopSession();
     stopDemo();
     const res = S.results;
-    if (!res.length) { show('intro'); return; }
+    const rec = Rec.finish(res.length >= settings.holds ? 'completed' : 'stopped');
+    lastRecord = rec;
+    if (!res.length) { if (rec) uploadPending(); show('intro'); return; }
+    const status = $('uploadStatus');
+    status.textContent = 'Log saved on this phone. Sending a copy to your Mac…';
+    if (rec) upload(rec).then(saved => {
+      status.textContent = saved
+        ? `Log saved on this phone and on your Mac (logs/${saved}).`
+        : 'Log saved on this phone. Use Export log to share it.';
+      if (saved) uploadPending();
+    });
     const total = res.reduce((s, r) => s + r.seconds, 0);
     const onPct = total ? res.reduce((s, r) => s + (r.onPct * r.seconds) / total, 0) : 0;
     const wobble = Core.mean(res.map(r => r.wobble));
@@ -690,6 +825,7 @@ if (typeof module !== 'undefined') module.exports = Core;
             S.lastCal = cal;
             if (!cal.ok) return failCalibration(cal.reason);
             S.cal = cal;
+            if (Rec.cur) Rec.cur.calibration = calInfo(cal, false);
             S.gateOn = false;
             S.trace = [];
             Sound.chime();
@@ -713,6 +849,8 @@ if (typeof module !== 'undefined') module.exports = Core;
         if (S.inReached || done) {
           S.holdSamples = [];
           S.beepT = 0;
+          S.holdStartT = S.clock;
+          S.reachSec = S.phaseT;
           enter('hold', settings.holdSec, null, 'Hold', null);
         }
         break;
@@ -729,7 +867,12 @@ if (typeof module !== 'undefined') module.exports = Core;
           if (left <= n && !S.spoken[n]) { S.spoken[n] = true; speak(w); }
         }
         if (done) {
-          S.results.push(Core.summarizeHold(S.holdSamples));
+          const sum = Core.summarizeHold(S.holdSamples);
+          S.results.push(sum);
+          if (Rec.cur) Rec.cur.holds.push({
+            hold: S.holdIdx + 1, startT: r2(S.holdStartT), reachedTarget: S.inReached, secondsToReach: r1(S.reachSec),
+            seconds: r1(sum.seconds), onPct: r1(sum.onPct), meanLevel: r1(sum.meanLevel), wobble: r2(sum.wobble), drops: sum.drops,
+          });
           S.holdIdx++;
           enter('out', 3, null, 'Relax and breathe out', 'And relax. Breathe out.');
         }
@@ -759,6 +902,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     S.clock += dt;
     tick(dt);
     if (!S.running) return;
+    Rec.sample();
 
     if (S.latest) {
       if (S.cal && S.level != null) {
@@ -863,6 +1007,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (document.visibilityState === 'hidden') { Sound.tone(false); return; }
     keepAwake();
     lastFrame = performance.now();
+    Rec.event('resumed-after-hidden', { phase: S.phase });
     if (CAL_PHASES.includes(S.phase)) {
       startCalibration();
       speak('Calibration restarted.');
@@ -914,9 +1059,27 @@ if (typeof module !== 'undefined') module.exports = Core;
   });
   $('stop').addEventListener('click', () => {
     if (S.results.length) finishSession();
-    else { stopSession(); stopDemo(); show('intro'); }
+    else {
+      Rec.finish('stopped', { calibration: Rec.cur?.calibration ?? calInfo(S.lastCal) });
+      uploadPending();
+      stopSession(); stopDemo(); show('intro');
+    }
   });
-  $('recal').addEventListener('click', () => { S.results = []; startCalibration(); });
+  $('recal').addEventListener('click', () => { Rec.event('recalibrate'); S.results = []; startCalibration(); });
+
+  let lastRecord = null;
+  const stamp = () => new Date().toISOString().replace(/[-:]/g, '').slice(0, 13).replace('T', '-');
+  $('export').addEventListener('click', async () => {
+    if (!lastRecord) return;
+    const r = await exportLogs([lastRecord], 'breath-hold-' + lastRecord.id);
+    if (r === 'downloaded') $('uploadStatus').textContent = 'Log files downloaded.';
+  });
+  $('exportAll').addEventListener('click', async () => {
+    const logs = load(LOGS_KEY, []);
+    const r = await exportLogs(logs, 'breath-hold-logs-' + stamp());
+    if (r === 'empty') $('exportAllNote').textContent = 'No detailed logs on this phone yet.';
+    else if (r === 'downloaded') $('exportAllNote').textContent = `Downloaded ${logs.length} session logs.`;
+  });
   $('again').addEventListener('click', () => {
     Sound.init();
     speak('Starting.');
@@ -927,6 +1090,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   bindSettings();
   renderHistory();
+  uploadPending();
 })();
 </script>
 </body>
