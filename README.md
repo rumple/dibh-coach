@@ -36,6 +36,22 @@ share them: **Export log** on the summary screen, or **Export detailed logs** on
 share sheet (Files, AirDrop, WhatsApp, Mail…) with a `.json` and a `.csv` file. Nothing is uploaded
 automatically.
 
+## Log viewer
+
+`logviewer.py` turns exported logs into one self-contained HTML report with charts (standard-library
+Python, no packages, works offline):
+
+```sh
+python3 logviewer.py path/to/breath-hold-*.json   # files or folders; default ./logs
+python3 logviewer.py logs -o report.html --no-open
+```
+
+Reports go to `reports/` (git-ignored) and open in the browser. Each session shows: time above line,
+signal range and duration; a session timeline with calibration and hold bands and a beam on/paused strip;
+all holds overlaid from their start; per-hold bars and table; the calibration tilt scatter with notes
+(including drift since calibration); and the raw pitch/roll trace. With several sessions there is a session
+picker and a progress chart. Multi-session exports from the app's **Export detailed logs** work too.
+
 ## Test on an iPhone
 
 iPhone Safari only gives motion data to `https://` pages, so run:

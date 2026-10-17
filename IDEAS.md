@@ -59,8 +59,9 @@ coarse and not available to web pages), compass, light and proximity sensors.
 
 ## Logs and review
 
-- **Log viewer.** A page that opens an exported `.json` (file picker) and plots each hold with the target
-  line, for the patient or clinician to review.
+- **Log viewer in the app.** `logviewer.py` already builds HTML reports on a computer. A version inside the
+  app (open an exported `.json`, or view stored sessions) would let patients and clinicians review on the
+  phone; the report template could be reused.
 - **Local time in file names.** Session ids and export names use UTC; switch to local time.
 - **Delete logs.** A button to clear stored logs and history on the phone.
 

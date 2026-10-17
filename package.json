@@ -3,7 +3,7 @@
   "private": true,
   "description": "Breath hold practice app for radiotherapy patients, runs in the iPhone browser",
   "scripts": {
-    "test": "node --test test/core.test.js",
+    "test": "node --test test/core.test.js && python3 -m unittest discover -s test",
     "serve": "./serve.sh"
   }
 }
