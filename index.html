@@ -306,7 +306,7 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       </div>
       <p class="note">Above line is the share of the hold your breath stayed over the target, which is when the treatment beam would run. Wobble is how much your breath level moved during the hold; lower is steadier. Drops counts the times you fell below the line.</p>
     </section>
-    <p class="note" id="uploadStatus" aria-live="polite"></p>
+    <p class="note" id="logStatus" aria-live="polite"></p>
     <div class="actions">
       <button id="again" class="primary big">Practise again</button>
       <button id="export">Export log</button>
@@ -520,7 +520,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   // ---------- Detailed session logs ----------
   // Each session keeps calibration, per-hold stats, phase events and a 10 Hz trace.
-  // The last 10 records stay on the phone; each is also posted to api/log when served by server.py.
+  // The last 10 records stay on the phone and leave it only through Export.
   const LOGS_KEY = 'dibh-coach.logs';
   const MAX_LOGS = 10;
   const r1 = v => Math.round(v * 10) / 10;
@@ -575,34 +575,11 @@ if (typeof module !== 'undefined') module.exports = Core;
       const rec = this.cur;
       if (!rec) return null;
       this.cur = null;
-      Object.assign(rec, { outcome, endedAt: new Date().toISOString(), durationSec: r1(S.clock), uploaded: false }, extra);
+      Object.assign(rec, { outcome, endedAt: new Date().toISOString(), durationSec: r1(S.clock) }, extra);
       storeLogs([rec, ...load(LOGS_KEY, [])]);
       return rec;
     },
   };
-
-  function markUploaded(id) {
-    const logs = load(LOGS_KEY, []);
-    const rec = logs.find(r => r.id === id);
-    if (rec) { rec.uploaded = true; storeLogs(logs); }
-  }
-
-  async function upload(rec) {
-    try {
-      const res = await fetch('api/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...rec, uploaded: true }) });
-      if (!res.ok) return null;
-      const body = await res.json();
-      markUploaded(rec.id);
-      return body.saved || 'logs';
-    } catch { return null; }
-  }
-
-  // Retry records that could not be uploaded earlier (e.g. the tunnel was down).
-  async function uploadPending() {
-    for (const rec of load(LOGS_KEY, []).filter(r => !r.uploaded)) {
-      if (!(await upload(rec))) return;
-    }
-  }
 
   function toCSV(recs) {
     const rows = ['session_id,' + recs[0].traceColumns.join(',')];
@@ -728,7 +705,6 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   function failCalibration(reason) {
     Rec.finish('calibration-failed', { failReason: reason, calibration: calInfo(S.lastCal), samplesReceived: S.samples });
-    uploadPending();
     stopSession();
     stopDemo();
     const range = S.lastCal?.rangeDeg;
@@ -746,15 +722,8 @@ if (typeof module !== 'undefined') module.exports = Core;
     const res = S.results;
     const rec = Rec.finish(res.length >= settings.holds ? 'completed' : 'stopped');
     lastRecord = rec;
-    if (!res.length) { if (rec) uploadPending(); show('intro'); return; }
-    const status = $('uploadStatus');
-    status.textContent = 'Log saved on this phone. Sending a copy to your Mac…';
-    if (rec) upload(rec).then(saved => {
-      status.textContent = saved
-        ? `Log saved on this phone and on your Mac (logs/${saved}).`
-        : 'Log saved on this phone. Use Export log to share it.';
-      if (saved) uploadPending();
-    });
+    if (!res.length) { show('intro'); return; }
+    $('logStatus').textContent = 'Log saved on this phone. Tap Export log to share it.';
     const total = res.reduce((s, r) => s + r.seconds, 0);
     const onPct = total ? res.reduce((s, r) => s + (r.onPct * r.seconds) / total, 0) : 0;
     const wobble = Core.mean(res.map(r => r.wobble));
@@ -1061,7 +1030,6 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (S.results.length) finishSession();
     else {
       Rec.finish('stopped', { calibration: Rec.cur?.calibration ?? calInfo(S.lastCal) });
-      uploadPending();
       stopSession(); stopDemo(); show('intro');
     }
   });
@@ -1072,7 +1040,7 @@ if (typeof module !== 'undefined') module.exports = Core;
   $('export').addEventListener('click', async () => {
     if (!lastRecord) return;
     const r = await exportLogs([lastRecord], 'breath-hold-' + lastRecord.id);
-    if (r === 'downloaded') $('uploadStatus').textContent = 'Log files downloaded.';
+    if (r === 'downloaded') $('logStatus').textContent = 'Log files downloaded.';
   });
   $('exportAll').addEventListener('click', async () => {
     const logs = load(LOGS_KEY, []);
@@ -1090,7 +1058,6 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   bindSettings();
   renderHistory();
-  uploadPending();
 })();
 </script>
 </body>

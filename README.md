@@ -19,7 +19,7 @@ clinical threshold.
    Recent sessions are kept in the browser's local storage.
 
 The app is `index.html` (no build step, no dependencies). Pure signal maths lives in the
-`<script id="core">` block and is tested with Node. `server.py` serves it and collects logs.
+`<script id="core">` block and is tested with Node. `server.py` serves it for testing.
 
 ## Session logs
 
@@ -31,14 +31,10 @@ Every session (completed, stopped early, or failed calibration) produces a detai
 - each hold: time to reach the line, length, % above line, mean level, wobble, drops
 - phase events, and a 10 Hz trace: `t_s, pitch_deg, roll_deg, level_pct, beam_on, phase`
 
-Where they go:
-
-- **Phone**: the last 10 records stay in Safari's local storage. **Export log** (summary screen) and
-  **Export detailed logs** (start screen) open the share sheet with a `.json` and a `.csv` file.
-- **Mac**: when the page is served by `server.py` (via `serve.sh`), each record is posted to `/api/log`
-  and saved as `logs/<session id>.json`; the terminal prints a one-line summary. Records that could not be
-  sent are retried next time the page opens. `logs/` is git-ignored, and the server only serves the page
-  itself, so logs can't be fetched through the tunnel link.
+Logs stay on the phone (the last 10 records, in Safari's local storage) and leave it only when you
+share them: **Export log** on the summary screen, or **Export detailed logs** on the start screen, opens the
+share sheet (Files, AirDrop, WhatsApp, Mail…) with a `.json` and a `.csv` file. Nothing is uploaded
+automatically.
 
 ## Test on an iPhone
 
