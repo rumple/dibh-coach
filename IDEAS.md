@@ -20,6 +20,31 @@ Evidence marked *17 Oct log* comes from the first real iPhone session (iOS 18.7,
 - **Wobble that ignores the breath-in.** Wobble currently includes the overshoot at the start of a hold.
   Measure it from second 3 onwards, and report the slope (sinking or rising) separately.
 
+## Sensors
+
+In order of recommendation. Today the app uses only the accelerometer's gravity vector (phone tilt).
+
+1. **Add the gyroscope.** Fuse `rotationRate` with the gravity tilt (complementary filter) for a smoother,
+   less jittery signal and clearer detection of the phone sliding. Same motion permission, no new hardware,
+   works in iPhone and Android browsers.
+2. **Camera on a second device.** A phone or laptop on a stand watches the chest from the side and tracks a
+   sticker (or body pose) to measure the actual chest rise, as Varian RPM does. The most accurate option
+   that still runs in a web page.
+3. **Microphone as a hold check.** Silence during a hold confirms no airflow; breath sounds reveal a leak or
+   a top-up breath. Cannot measure depth and needs a quiet room, so only as a helper.
+4. **Native-app or external options, if this becomes a product:**
+   - iPhone TrueDepth / LiDAR depth camera on a stand, measuring the chest surface to the millimetre (like
+     AlignRT / C-RAD). Native iOS app only.
+   - Bluetooth breathing belt (stretch sensor), as in the Borås DIBH-App study. Web Bluetooth works in
+     Android Chrome only, not iPhone browsers.
+   - Chest strap with accelerometer (e.g. Polar H10): movement plus heart rate; raw data usually needs the
+     maker's SDK.
+   - Bluetooth spirometer: measures air volume like Elekta ABC; needs a mouthpiece.
+
+Ruled out: movement-only acceleration (double integration drifts within seconds; could still give breathing
+rate), camera on the phone lying on the chest (1 cm rise is invisible against the ceiling), barometer (far too
+coarse and not available to web pages), compass, light and proximity sensors.
+
 ## Coaching
 
 - **Warn about slow sinking.** Holds 1–2 rose to ~125% and then sank steadily towards the line
