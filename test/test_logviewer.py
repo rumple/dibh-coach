@@ -69,3 +69,21 @@ class LogViewerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DriftTest(unittest.TestCase):
+    def test_drift_projects_calm_and_deep_breaths(self):
+        rec = synthetic_record()
+        rec["calibration"] = {"origin": [1.0, 0.5], "axis": [1.0, 0.0], "zero": 0.0, "full": 2.0}
+        # Shift the phone 0.5 deg against the breathing direction during the final rest.
+        for row in rec["trace"]:
+            if row[5] == "rest":
+                row[1] -= 0.5
+        d = logviewer.build_session(rec)["drift"]
+        self.assertEqual([c["label"] for c in d["calm"]], ["Calibration calm", "Before hold 1", "Rest after hold 1"])
+        self.assertEqual([c["median"] for c in d["calm"]], [0, 0, -25])
+        self.assertEqual([x["median"] for x in d["deep"]], [100])
+        self.assertEqual(d["rangeDeg"], 2.0)
+
+    def test_no_drift_without_calibration_axis(self):
+        self.assertIsNone(logviewer.build_session(synthetic_record())["drift"])

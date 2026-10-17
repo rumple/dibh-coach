@@ -50,6 +50,7 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 var
 h1, h2 { margin: 0; text-wrap: balance; line-height: 1.2; }
 h1 { font-size: 1.7rem; }
 h2 { font-size: 1.1rem; }
+h3 { font-size: 0.95rem; margin: 0; }
 p { margin: 0; }
 .eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2); font-weight: 600; }
 .meta { color: var(--ink2); display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
@@ -163,6 +164,20 @@ footer { color: var(--muted); font-size: 0.85rem; }
         <div class="chart" id="calibChart"></div>
       </div>
       <div class="facts" id="calibFacts"></div>
+    </div>
+  </section>
+
+  <section class="card" id="driftCard">
+    <h2>Calibration drift</h2>
+    <p class="caption">If the phone or your posture shifts after calibration, relaxed breathing stops reading 0% and every level after it is off by the same amount. Each dot is the median level of one calm stretch.</p>
+    <div class="legend" id="driftLegend"></div>
+    <div class="chart" id="driftChart"></div>
+    <div class="two">
+      <div>
+        <h3>Calibration deep breaths</h3>
+        <div class="chart" id="deepChart"></div>
+      </div>
+      <div class="facts" id="driftFacts"></div>
     </div>
   </section>
 
@@ -347,7 +362,9 @@ footer { color: var(--muted); font-size: 0.85rem; }
       }
       if (o.ref != null) {
         svgEl('line', { x1: m.l, x2: W - m.r, y1: Y(o.ref.y), y2: Y(o.ref.y), class: 'ref' }, svg);
-        text(svg, W - m.r - 4, Y(o.ref.y) - 4, o.ref.label, { 'text-anchor': 'end', class: 'label' });
+        // Label in the slot with the shortest bar so it never sits on a column.
+        const low = o.items.reduce((b, it, i) => (it.value < o.items[b].value ? i : b), 0);
+        text(svg, m.l + slot * (low + 0.5), Y(o.ref.y) - 5, o.ref.label, { 'text-anchor': 'middle', class: 'label' });
       }
       const tip = tooltip(box);
       o.items.forEach((it, i) => {
@@ -479,10 +496,62 @@ footer { color: var(--muted); font-size: 0.85rem; }
     if (cal.rangeDeg != null) facts.push(`A deep breath tilted the phone <b>${fix(cal.rangeDeg)}°</b> from calm breathing. The app needs at least 0.4°; above about 1.5° is a clear signal.`);
     if (cal.calmSdDeg != null) facts.push(`Calm breathing moved it about <b>±${fix(cal.calmSdDeg, 2)}°</b>; the deep breaths held within <b>±${fix(cal.holdSdDeg, 2)}°</b>.`);
     if (cal.axis) { const roll = Math.abs(cal.axis[1]) > Math.abs(cal.axis[0]); facts.push(`Breathing mostly tilted the phone <b>${roll ? 'side to side' : 'top to bottom'}</b>. Either works, because the app learns the direction.`); }
-    if (s.restLevelMedian != null) facts.push(`During rests, relaxed breathing read <b>${pct(s.restLevelMedian)}</b> (calibration set it to 0%).${Math.abs(s.restLevelMedian) >= 10 ? ' The difference is drift since calibration, for example from the phone shifting or deeper relaxation.' : ''}`);
+    if (s.restLevelMedian != null) facts.push(`Across all rests, relaxed breathing averaged <b>${pct(s.restLevelMedian)}</b> (calibration set it to 0%).${Math.abs(s.restLevelMedian) >= 10 ? ' See Calibration drift below for when it changed.' : ''}`);
     if (cal.reused) facts.push('This session reused the calibration from the session before it.');
     if (!facts.length) facts.push('Calibration did not finish in this session.');
     $('calibFacts').innerHTML = facts.map(f => `<p>${f}</p>`).join('');
+
+    // Calibration drift
+    const dr = s.drift;
+    $('driftCard').hidden = !dr || (!dr.calm.length && !dr.deep.length);
+    if (dr && !$('driftCard').hidden) {
+      const calm = dr.calm, deg = v => fix((Math.abs(v) / 100) * dr.rangeDeg, 2);
+      const nearestCalm = x => calm.reduce((b, c) => (Math.abs(c.t - x) < Math.abs(b.t - x) ? c : b), calm[0]);
+      legend($('driftLegend'), [
+        { label: 'Calm level (median)', kind: 'key-dot', color: 'var(--s1)' },
+        { label: 'Calibrated calm = 0%', kind: 'key-ref' },
+      ]);
+      if (calm.length) {
+        const vals = calm.flatMap(c => [c.median]);
+        lineChart($('driftChart'), {
+          title: 'Calm level over the session', x: [0, end], height: 220, dots: true,
+          y: [Math.min(-40, Math.floor(Math.min(...vals) / 10) * 10 - 10), Math.max(40, Math.ceil(Math.max(...vals) / 10) * 10 + 10)],
+          series: [{ name: 'Calm level', color: 'var(--s1)', points: calm.map(c => [c.t, c.median]) }],
+          bands: s.timeline.bands, refs: [{ y: 0, label: 'calibrated 0%' }],
+          yFmt: v => `${v}%`, xFmt: mmss, valFmt: pct, snap: end / 8,
+          tipX: x => { const c = nearestCalm(x); return `${c.label} (${mmss(c.t0)}–${mmss(c.t1)})`; },
+          tipExtra: x => { const c = nearestCalm(x); return `<div class="row"><span>Breathing swing</span><span>${pct(c.lo)} to ${pct(c.hi)}</span></div><div class="row"><span>Tilt offset</span><span>${c.median < 0 ? '−' : ''}${deg(c.median)}°</span></div>`; },
+        });
+      } else empty($('driftChart'), 'No calm stretches in this log.');
+
+      if (dr.deep.length) columnChart($('deepChart'), {
+        title: 'Calibration deep breaths', height: 200, max: Math.max(120, Math.ceil(Math.max(...dr.deep.map(d => d.median)) / 20) * 20),
+        yFmt: v => `${v}%`, valFmt: pct, ref: { y: 100, label: 'average = 100%' },
+        items: dr.deep.map((d, i) => ({ label: `Breath ${i + 1}`, value: d.median, detail: `<div class="h">${esc(d.label)} (${mmss(d.t0)}–${mmss(d.t1)})</div><div class="row"><span>Level</span><span>${pct(d.median)}</span></div><div class="row"><span>Range</span><span>${pct(d.lo)} to ${pct(d.hi)}</span></div>` })),
+      });
+      else empty($('deepChart'), 'This session reused an earlier calibration.');
+
+      const facts = [];
+      const later = calm.filter(c => c.label !== 'Calibration calm');
+      if (later.length) {
+        const last = later[later.length - 1];
+        const big = Math.abs(last.median) >= 10;
+        facts.push(`By the end, relaxed breathing read <b>${pct(last.median)}</b>, a tilt offset of <b>${deg(last.median)}°</b>. ${big ? `Every level after that point reads about ${Math.round(Math.abs(last.median))} points too ${last.median < 0 ? 'low' : 'high'}, so holds were really ${last.median < 0 ? 'deeper' : 'shallower'} than shown.` : 'That is small; the calibration held.'}`);
+      }
+      if (calm.length > 1) {
+        let step = null;
+        for (let i = 1; i < calm.length; i++) {
+          const d = calm[i].median - calm[i - 1].median;
+          if (!step || Math.abs(d) > Math.abs(step.d)) step = { d, a: calm[i - 1], b: calm[i] };
+        }
+        if (Math.abs(step.d) >= 10) facts.push(`The biggest change was between <b>${esc(step.a.label.toLowerCase())}</b> and <b>${esc(step.b.label.toLowerCase())}</b> (${mmss(step.a.t1)}–${mmss(step.b.t0)}): <b>${step.d > 0 ? '+' : '−'}${Math.round(Math.abs(step.d))} points</b>. A single step like this usually means the phone or your posture shifted.`);
+      }
+      if (dr.deep.length > 1) {
+        const v = dr.deep.map(d => d.median), spread = Math.max(...v) - Math.min(...v);
+        facts.push(`The calibration deep breaths read <b>${v.map(pct).join(', ')}</b>, a spread of <b>${Math.round(spread)} points</b>. ${spread > 30 ? 'They varied a lot, so 100% is roughly the middle breath; consistent deep breaths give a more reliable scale.' : 'They were consistent.'}`);
+      }
+      $('driftFacts').innerHTML = facts.map(f => `<p>${f}</p>`).join('') || '<p>Not enough data to measure drift.</p>';
+    }
 
     // Raw sensor
     legend($('rawLegend'), [{ label: 'Pitch (top edge up/down)', color: 'var(--s1)' }, { label: 'Roll (side to side)', color: 'var(--s2)' }]);

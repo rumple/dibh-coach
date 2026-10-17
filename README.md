@@ -49,7 +49,8 @@ python3 logviewer.py logs -o report.html --no-open
 Reports go to `reports/` (git-ignored) and open in the browser. Each session shows: time above line,
 signal range and duration; a session timeline with calibration and hold bands and a beam on/paused strip;
 all holds overlaid from their start; per-hold bars and table; the calibration tilt scatter with notes
-(including drift since calibration); and the raw pitch/roll trace. With several sessions there is a session
+; calibration drift (the calm level of each rest over the session, the three calibration deep breaths, and
+the biggest shift); and the raw pitch/roll trace. With several sessions there is a session
 picker and a progress chart. Multi-session exports from the app's **Export detailed logs** work too.
 
 ## Test on an iPhone

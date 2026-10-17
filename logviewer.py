@@ -89,6 +89,60 @@ def r1(v):
     return None if v is None else round(v, 1)
 
 
+def quantile(values, q):
+    s = sorted(values)
+    return s[round(q * (len(s) - 1))]
+
+
+def drift(trace, cal, ix):
+    """Calm level of each calm stretch and level of each calibration deep breath, on the calibrated scale.
+
+    Uses the stored calibration (origin, axis, zero, full) to project raw tilt, so it also works before
+    calibration finished. Returns None when the log has no usable calibration.
+    """
+    if not all(k in cal for k in ("origin", "axis", "zero", "full")) or cal["full"] == cal["zero"]:
+        return None
+    T, P, R, PH = ix["t_s"], ix["pitch_deg"], ix["roll_deg"], ix["phase"]
+    (ox, oy), (ax, ay), zero, full = cal["origin"], cal["axis"], cal["zero"], cal["full"]
+
+    def level(row):
+        return 100 * ((row[P] - ox) * ax + (row[R] - oy) * ay - zero) / (full - zero)
+
+    # Consecutive rows of the same phase form one stretch.
+    stretches = []
+    for row in trace:
+        if stretches and stretches[-1]["phase"] == row[PH] and row[T] - stretches[-1]["rows"][-1][T] < 0.3:
+            stretches[-1]["rows"].append(row)
+        else:
+            stretches.append({"phase": row[PH], "rows": [row]})
+
+    calm, deep, holds_seen = [], [], 0
+    for s in stretches:
+        rows, t0 = s["rows"], s["rows"][0][T]
+        if s["phase"] == "hold":
+            holds_seen += 1
+            continue
+        if s["phase"] == "calHold":
+            rows = [r for r in rows if r[T] - t0 >= 2.5]  # the app ignores the first 2.5 s too
+            label = f"Deep breath {len(deep) + 1}"
+            target = deep
+        elif s["phase"] in ("baseline", "prep", "rest"):
+            if s["phase"] == "rest":
+                rows = [r for r in rows if r[T] - t0 >= 5]  # skip the recovery breaths right after a hold
+            label = {"baseline": "Calibration calm", "prep": "Before hold 1"}.get(s["phase"], f"Rest after hold {holds_seen}")
+            target = calm
+        else:
+            continue
+        if len(rows) < 10:
+            continue
+        levels = [level(r) for r in rows]
+        target.append({
+            "label": label, "t0": rows[0][T], "t1": rows[-1][T], "t": round((rows[0][T] + rows[-1][T]) / 2, 2),
+            "median": r1(statistics.median(levels)), "lo": r1(quantile(levels, 0.1)), "hi": r1(quantile(levels, 0.9)),
+        })
+    return {"calm": calm, "deep": deep, "rangeDeg": round(full - zero, 3)}
+
+
 def build_session(rec):
     cols = rec.get("traceColumns") or ["t_s", "pitch_deg", "roll_deg", "level_pct", "beam_on", "phase"]
     ix = {c: i for i, c in enumerate(cols)}
@@ -146,6 +200,7 @@ def build_session(rec):
             "deep": [[r[P], r[R]] for r in trace if r[PH] == "calHold"],
         },
         "raw": {"pitch": [[r[T], r[P]] for r in trace], "roll": [[r[T], r[R]] for r in trace], "bands": bands},
+        "drift": drift(trace, cal, ix),
     }
 
 
