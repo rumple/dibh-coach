@@ -44,6 +44,13 @@ class LogViewerTest(unittest.TestCase):
         self.assertEqual(len(s["calib"]["calm"]), 160)
         self.assertEqual(s["restLevelMedian"], 0)
 
+    def test_overlay_uses_each_holds_planned_length(self):
+        rec = synthetic_record()
+        rec["settings"]["phases"] = [{"holds": 1, "holdSec": 8, "restSec": 20}]
+        rec["holds"][0].update(phase=1, plannedSec=8)
+        s = logviewer.build_session(rec)
+        self.assertEqual(s["overlay"][0]["points"][-1][0], 8.2)
+
     def test_loads_single_and_multi_exports_and_dedupes(self):
         with tempfile.TemporaryDirectory() as d:
             a, b = synthetic_record("a", "2026-10-16T06:00:00Z"), synthetic_record("b", "2026-10-15T06:00:00Z")

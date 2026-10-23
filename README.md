@@ -14,7 +14,10 @@ clinical threshold.
 2. **Calibration**: 20 s of calm breathing sets 0%, three deep breaths held for 6 s set 100%.
    The breathing direction is learned from the data, so the phone's orientation on the chest doesn't matter.
 3. **Practice**: for each hold, breathe in until the level crosses the target, hold for the set time
-   (spoken 3-2-1 countdown), then rest. Defaults: 4 holds × 20 s, 40 s rest, target 75%.
+   (spoken 3-2-1 countdown), then rest. The session is a list of **phases** (up to 6); each phase has its
+   own number of holds, hold length and rest after each hold, e.g. 2 × 15 s with 30 s rest, then
+   3 × 25 s with 60 s rest. A new phase is announced during the rest before it. Default: one phase of
+   4 holds × 20 s, 40 s rest, target 75%. Settings saved before phases existed become one phase.
 4. **Summary**: time above line, average level, wobble (standard deviation of level) and drops per hold.
    Recent sessions are kept in the browser's local storage.
 
@@ -25,10 +28,12 @@ The app is `index.html` (no build step, no dependencies). Pure signal maths live
 
 Every session (completed, stopped early, or failed calibration) produces a detailed record:
 
-- settings, device user agent, outcome, start/end time
+- settings (including `phases`; `holds` is the planned total, `holdSec`/`restSec` the longest), device user
+  agent, outcome, start/end time
 - calibration: tilt range between calm and deep breaths (`rangeDeg`), calm-breathing and hold spread,
   learned axis
-- each hold: time to reach the line, length, % above line, mean level, wobble, drops
+- each hold: phase, planned length (`plannedSec`), time to reach the line, length, % above line, mean level,
+  wobble, drops
 - phase events, and a 10 Hz trace: `t_s, pitch_deg, roll_deg, level_pct, beam_on, phase`
 
 Logs stay on the phone (the last 10 records, in Safari's local storage) and leave it only when you

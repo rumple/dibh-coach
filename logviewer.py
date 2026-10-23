@@ -170,7 +170,8 @@ def build_session(rec):
     overlay = []
     for i, h in enumerate(holds):
         s = h.get("startT", hold_spans[i][0] if i < len(hold_spans) else 0)
-        pts = [[round(r[T] - s, 2), r[L]] for r in trace if r[PH] == "hold" and s - 0.05 <= r[T] <= s + hold_sec + 0.2]
+        sec = h.get("plannedSec", hold_sec)
+        pts = [[round(r[T] - s, 2), r[L]] for r in trace if r[PH] == "hold" and s - 0.05 <= r[T] <= s + sec + 0.2]
         overlay.append({"name": f"Hold {h.get('hold', i + 1)}", "points": pts})
 
     total = sum(h.get("seconds", 0) for h in holds)

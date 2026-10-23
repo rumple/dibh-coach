@@ -87,6 +87,15 @@ p { margin: 0; }
 ol.steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; }
 ol.steps li::marker { color: var(--accent); font-weight: 700; }
 
+.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.phase { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.phase-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.phase-head h3 { font-size: 1rem; }
+.phase-head button { padding: 4px 0; font-size: 0.9rem; }
+.phase .fields { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.phase-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.phase-foot button { padding: 8px 14px; font-size: 0.95rem; }
+
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field label, .field .label { font-size: 0.85rem; color: var(--muted); }
@@ -209,26 +218,13 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
 
     <section class="panel">
       <h2>Session</h2>
+      <ol class="phases" id="phases"></ol>
+      <div class="phase-foot">
+        <button id="addPhase">Add phase</button>
+        <span class="note" id="planTotal"></span>
+      </div>
       <div class="fields">
-        <div class="field">
-          <label for="holds">Holds</label>
-          <select id="holds"><option>3</option><option>4</option><option>5</option><option>6</option></select>
-        </div>
-        <div class="field">
-          <label for="holdSec">Hold length</label>
-          <select id="holdSec">
-            <option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option>
-            <option value="25">25 s</option><option value="30">30 s</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="restSec">Rest between holds</label>
-          <select id="restSec">
-            <option value="20">20 s</option><option value="30">30 s</option><option value="40">40 s</option>
-            <option value="60">60 s</option><option value="90">90 s</option>
-          </select>
-        </div>
-        <div class="field">
+        <div class="field full">
           <span class="label">Feedback</span>
           <label class="check"><input type="checkbox" id="voice"> Spoken cues</label>
           <label class="check"><input type="checkbox" id="tone"> Tone above line</label>
@@ -241,7 +237,7 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
           </div>
         </div>
       </div>
-      <p class="note">Start with shorter holds and add 5 seconds at a time. Most treatment holds are 20 to 25 seconds. Three or four holds per session is enough.</p>
+      <p class="note">Each phase repeats its hold and rest the set number of times, then the next phase starts. Use phases to build up, for example 2 × 15 s, then 2 × 20 s. Most treatment holds are 20 to 25 seconds.</p>
     </section>
 
     <div class="actions">
@@ -300,7 +296,7 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       <h2>Each hold</h2>
       <div class="table-box">
         <table>
-          <thead><tr><th>Hold</th><th>Length</th><th>Above line</th><th>Avg level</th><th>Wobble</th><th>Drops</th></tr></thead>
+          <thead><tr><th>Hold</th><th id="phaseCol">Phase</th><th>Length</th><th>Above line</th><th>Avg level</th><th>Wobble</th><th>Drops</th></tr></thead>
           <tbody id="sumRows"></tbody>
         </table>
       </div>
@@ -402,7 +398,42 @@ const Core = (() => {
     };
   }
 
-  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold };
+  // Session plan. A session is a list of phases; each phase repeats its own hold and rest length.
+  // Rest follows every hold except the last one of the session.
+  const PHASE_LIMITS = { holds: [1, 10], holdSec: [5, 60], restSec: [5, 180] };
+  const MAX_PHASES = 6;
+
+  function normalizePhases(phases, fallback = { holds: 4, holdSec: 20, restSec: 40 }) {
+    const fix = (v, k) => {
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) ? clamp(n, ...PHASE_LIMITS[k]) : fallback[k];
+    };
+    const list = Array.isArray(phases) ? phases.filter(p => p && typeof p === 'object') : [];
+    const out = list.slice(0, MAX_PHASES).map(p => ({ holds: fix(p.holds, 'holds'), holdSec: fix(p.holdSec, 'holdSec'), restSec: fix(p.restSec, 'restSec') }));
+    return out.length ? out : [{ ...fallback }];
+  }
+
+  // One entry per hold, in order.
+  function buildPlan(phases) {
+    const plan = [];
+    phases.forEach((p, pi) => {
+      for (let i = 0; i < p.holds; i++) {
+        plan.push({ phase: pi + 1, phaseHold: i + 1, phaseHolds: p.holds, holdSec: p.holdSec, restSec: p.restSec });
+      }
+    });
+    return plan;
+  }
+
+  // Practice time after calibration: 6 s prep, then per hold up to 10 s breathing in, the hold, 3 s breathing out, rest.
+  function planSeconds(plan) {
+    return plan.reduce((s, h, i) => s + 10 + h.holdSec + 3 + (i < plan.length - 1 ? h.restSec : 0), 6);
+  }
+
+  function describePhases(phases) {
+    return phases.map(p => `${p.holds} × ${p.holdSec} s`).join(', ');
+  }
+
+  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold, PHASE_LIMITS, MAX_PHASES, normalizePhases, buildPlan, planSeconds, describePhases };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
 </script>
@@ -412,7 +443,7 @@ if (typeof module !== 'undefined') module.exports = Core;
   const $ = id => document.getElementById(id);
 
   // ---------- Settings and history (per-device conveniences) ----------
-  const DEFAULTS = { holds: 4, holdSec: 20, restSec: 40, target: 75, voice: true, tone: true };
+  const DEFAULTS = { phases: [{ holds: 4, holdSec: 20, restSec: 40 }], target: 75, voice: true, tone: true };
   const SETTINGS_KEY = 'dibh-coach.settings';
   const HISTORY_KEY = 'dibh-coach.history';
 
@@ -423,13 +454,83 @@ if (typeof module !== 'undefined') module.exports = Core;
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
   }
 
-  const settings = { ...DEFAULTS, ...load(SETTINGS_KEY, {}) };
+  const stored = load(SETTINGS_KEY, {});
+  const settings = { ...DEFAULTS, ...stored };
+  // Settings saved before phases existed had one holds / holdSec / restSec set.
+  settings.phases = Core.normalizePhases(stored.phases ?? (stored.holds != null ? [stored] : DEFAULTS.phases));
+  for (const k of ['holds', 'holdSec', 'restSec']) delete settings[k];
+
+  // Plan for the running session, fixed when practice starts.
+  let plan = Core.buildPlan(settings.phases);
+
+  const PHASE_OPTIONS = {
+    holds: [1, 2, 3, 4, 5, 6, 8, 10],
+    holdSec: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60],
+    restSec: [10, 15, 20, 30, 40, 60, 90, 120],
+  };
+  const PHASE_LABELS = { holds: 'Holds', holdSec: 'Hold length', restSec: 'Rest' };
+
+  function renderPhases() {
+    const ol = $('phases');
+    ol.textContent = '';
+    settings.phases.forEach((ph, i) => {
+      const li = document.createElement('li');
+      li.className = 'phase';
+      const head = document.createElement('div');
+      head.className = 'phase-head';
+      const h = document.createElement('h3');
+      h.textContent = `Phase ${i + 1}`;
+      head.append(h);
+      if (settings.phases.length > 1) {
+        const rm = document.createElement('button');
+        rm.className = 'link';
+        rm.textContent = 'Remove';
+        rm.setAttribute('aria-label', `Remove phase ${i + 1}`);
+        rm.addEventListener('click', () => { settings.phases.splice(i, 1); phasesChanged(); });
+        head.append(rm);
+      }
+      const fields = document.createElement('div');
+      fields.className = 'fields';
+      for (const k of ['holds', 'holdSec', 'restSec']) {
+        const field = document.createElement('div');
+        field.className = 'field';
+        const id = `phase${i}-${k}`;
+        const label = document.createElement('label');
+        label.htmlFor = id;
+        label.textContent = PHASE_LABELS[k];
+        const sel = document.createElement('select');
+        sel.id = id;
+        const opts = [...new Set([...PHASE_OPTIONS[k], ph[k]])].sort((a, b) => a - b);
+        for (const v of opts) sel.add(new Option(k === 'holds' ? String(v) : `${v} s`, String(v)));
+        sel.value = String(ph[k]);
+        sel.addEventListener('change', () => { ph[k] = Number(sel.value); phasesChanged(false); });
+        field.append(label, sel);
+        fields.append(field);
+      }
+      li.append(head, fields);
+      ol.append(li);
+    });
+    $('addPhase').hidden = settings.phases.length >= Core.MAX_PHASES;
+    renderPlanTotal();
+  }
+
+  function renderPlanTotal() {
+    const p = Core.buildPlan(settings.phases);
+    $('planTotal').textContent = `${p.length} hold${p.length === 1 ? '' : 's'} · about ${Math.round(Core.planSeconds(p) / 60)} min after calibration`;
+  }
+
+  function phasesChanged(rerender = true) {
+    save(SETTINGS_KEY, settings);
+    if (rerender) renderPhases(); else renderPlanTotal();
+  }
 
   function bindSettings() {
-    for (const k of ['holds', 'holdSec', 'restSec']) {
-      $(k).value = String(settings[k]);
-      $(k).addEventListener('change', () => { settings[k] = Number($(k).value); save(SETTINGS_KEY, settings); });
-    }
+    renderPhases();
+    $('addPhase').addEventListener('click', () => {
+      // A new phase starts as a copy of the last one, so small changes are quick.
+      settings.phases.push({ ...settings.phases[settings.phases.length - 1] });
+      phasesChanged();
+    });
     $('target').value = String(settings.target);
     $('targetOut').textContent = settings.target + '%';
     $('target').addEventListener('input', () => {
@@ -454,7 +555,7 @@ if (typeof module !== 'undefined') module.exports = Core;
       when.className = 'when';
       when.textContent = new Date(h.date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       const what = document.createElement('span');
-      what.textContent = `${h.holds} × ${h.holdSec} s · ${Math.round(h.onPct)}% above line`;
+      what.textContent = `${h.plan ?? `${h.holds} × ${h.holdSec} s`} · ${Math.round(h.onPct)}% above line`;
       li.append(when, what);
       ul.append(li);
     }
@@ -553,7 +654,11 @@ if (typeof module !== 'undefined') module.exports = Core;
         startedAt: new Date().toISOString(),
         demo: S.demo,
         userAgent: navigator.userAgent,
-        settings: { ...settings },
+        // holds is the planned total; holdSec / restSec are the longest, for readers of the older format.
+        settings: {
+          ...settings, phases: settings.phases.map(p => ({ ...p })), holds: plan.length,
+          holdSec: Math.max(...plan.map(h => h.holdSec)), restSec: Math.max(...plan.map(h => h.restSec)),
+        },
         outcome: 'running',
         calibration: reusedCal ? calInfo(reusedCal, true) : null,
         holds: [],
@@ -679,9 +784,21 @@ if (typeof module !== 'undefined') module.exports = Core;
     enter('settle', 4, 'Signal check', 'Lie still and breathe normally', 'Lie still, and breathe normally.');
   }
 
+  // Labels for the hold at plan index i.
+  const multiPhase = () => plan.some(h => h.phase > 1);
+  function holdChip(i) {
+    const h = plan[i];
+    return multiPhase() ? `Phase ${h.phase} · hold ${h.phaseHold} of ${h.phaseHolds}` : `Hold ${i + 1} of ${plan.length}`;
+  }
+  function phaseIntro(i) {
+    const h = plan[i];
+    return `Phase ${h.phase}. ${h.phaseHolds} hold${h.phaseHolds === 1 ? '' : 's'} of ${h.holdSec} seconds.`;
+  }
+
   function startPractice() {
     S.holdIdx = 0; S.results = []; S.trace = [];
-    enter('prep', 6, `Hold 1 of ${settings.holds}`, 'Breathe normally', `Practice starts. Hold 1 of ${settings.holds}. Breathe normally.`);
+    const intro = multiPhase() ? phaseIntro(0) : `Hold 1 of ${plan.length}.`;
+    enter('prep', 6, holdChip(0), 'Breathe normally', `Practice starts. ${intro} Breathe normally.`);
   }
 
   function startSession(reuseCal) {
@@ -690,6 +807,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     show('session');
     keepAwake();
     const reuse = reuseCal && S.cal;
+    plan = Core.buildPlan(settings.phases);
     Rec.start(reuse ? S.cal : null);
     if (reuse) startPractice(); else startCalibration();
     lastFrame = performance.now();
@@ -720,7 +838,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     stopSession();
     stopDemo();
     const res = S.results;
-    const rec = Rec.finish(res.length >= settings.holds ? 'completed' : 'stopped');
+    const rec = Rec.finish(res.length >= plan.length ? 'completed' : 'stopped');
     lastRecord = rec;
     if (!res.length) { show('intro'); return; }
     $('logStatus').textContent = 'Log saved on this phone. Tap Export log to share it.';
@@ -728,14 +846,16 @@ if (typeof module !== 'undefined') module.exports = Core;
     const onPct = total ? res.reduce((s, r) => s + (r.onPct * r.seconds) / total, 0) : 0;
     const wobble = Core.mean(res.map(r => r.wobble));
     $('sBeam').textContent = Math.round(onPct) + '%';
-    $('sHolds').textContent = `${res.length}/${settings.holds}`;
+    $('sHolds').textContent = `${res.length}/${plan.length}`;
     $('sWobble').textContent = wobble.toFixed(1);
     $('sumTitle').textContent = onPct >= 90 ? 'Steady holds' : onPct >= 70 ? 'Good practice' : 'Keep practising';
     const tbody = $('sumRows');
     tbody.textContent = '';
+    const phases = multiPhase();
+    $('phaseCol').hidden = !phases;
     res.forEach((r, i) => {
       const tr = document.createElement('tr');
-      for (const v of [i + 1, r.seconds.toFixed(0) + ' s', Math.round(r.onPct) + '%', Math.round(r.meanLevel) + '%', r.wobble.toFixed(1), r.drops]) {
+      for (const v of [i + 1, ...(phases ? [plan[i].phase] : []), r.seconds.toFixed(0) + ' s', Math.round(r.onPct) + '%', Math.round(r.meanLevel) + '%', r.wobble.toFixed(1), r.drops]) {
         const td = document.createElement('td');
         td.textContent = String(v);
         tr.append(td);
@@ -744,7 +864,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     });
     if (!S.demo) {
       const hist = load(HISTORY_KEY, []);
-      hist.unshift({ date: Date.now(), holds: res.length, holdSec: settings.holdSec, target: settings.target, onPct, wobble });
+      hist.unshift({ date: Date.now(), holds: res.length, plan: Core.describePhases(settings.phases), target: settings.target, onPct, wobble });
       save(HISTORY_KEY, hist.slice(0, 50));
       renderHistory();
     }
@@ -810,7 +930,7 @@ if (typeof module !== 'undefined') module.exports = Core;
         if (S.phase === 'rest' && remaining() <= 5 && !S.spoken.ready) { S.spoken.ready = true; speak('Get ready.'); }
         if (done) {
           S.inReached = false;
-          enter('in', 10, `Hold ${S.holdIdx + 1} of ${settings.holds}`, 'Breathe in deeply and hold', 'Breathe in deeply, and hold.');
+          enter('in', 10, holdChip(S.holdIdx), 'Breathe in deeply and hold', 'Breathe in deeply, and hold.');
         }
         break;
       case 'in':
@@ -820,7 +940,7 @@ if (typeof module !== 'undefined') module.exports = Core;
           S.beepT = 0;
           S.holdStartT = S.clock;
           S.reachSec = S.phaseT;
-          enter('hold', settings.holdSec, null, 'Hold', null);
+          enter('hold', plan[S.holdIdx].holdSec, null, 'Hold', null);
         }
         break;
       case 'hold': {
@@ -839,7 +959,7 @@ if (typeof module !== 'undefined') module.exports = Core;
           const sum = Core.summarizeHold(S.holdSamples);
           S.results.push(sum);
           if (Rec.cur) Rec.cur.holds.push({
-            hold: S.holdIdx + 1, startT: r2(S.holdStartT), reachedTarget: S.inReached, secondsToReach: r1(S.reachSec),
+            hold: S.holdIdx + 1, phase: plan[S.holdIdx].phase, plannedSec: plan[S.holdIdx].holdSec, startT: r2(S.holdStartT), reachedTarget: S.inReached, secondsToReach: r1(S.reachSec),
             seconds: r1(sum.seconds), onPct: r1(sum.onPct), meanLevel: r1(sum.meanLevel), wobble: r2(sum.wobble), drops: sum.drops,
           });
           S.holdIdx++;
@@ -849,8 +969,12 @@ if (typeof module !== 'undefined') module.exports = Core;
       }
       case 'out':
         if (done) {
-          if (S.holdIdx >= settings.holds) return finishSession();
-          enter('rest', settings.restSec, `Rest · next hold ${S.holdIdx + 1} of ${settings.holds}`, 'Rest and breathe normally', null);
+          if (S.holdIdx >= plan.length) return finishSession();
+          // Rest length belongs to the hold just finished; announce a new phase as its rest begins.
+          const next = plan[S.holdIdx], newPhase = next.phase !== plan[S.holdIdx - 1].phase;
+          enter('rest', plan[S.holdIdx - 1].restSec, `Rest · next: ${holdChip(S.holdIdx).toLowerCase()}`,
+            newPhase ? `Rest. Next: phase ${next.phase}, ${next.holdSec} s holds` : 'Rest and breathe normally',
+            newPhase ? `Rest. Next, ${phaseIntro(S.holdIdx)}` : null);
         }
         break;
     }
@@ -981,7 +1105,7 @@ if (typeof module !== 'undefined') module.exports = Core;
       startCalibration();
       speak('Calibration restarted.');
     } else if (S.phase === 'in' || S.phase === 'hold') {
-      enter('rest', 10, `Rest · next hold ${S.holdIdx + 1} of ${settings.holds}`, 'Paused. This hold will restart.', 'Paused. This hold will restart.');
+      enter('rest', 10, `Rest · next: ${holdChip(S.holdIdx).toLowerCase()}`, 'Paused. This hold will restart.', 'Paused. This hold will restart.');
     }
   });
 

@@ -424,15 +424,19 @@ footer { color: var(--muted); font-size: 0.85rem; }
     document.title = `Breath Hold Report · ${s.dateShort}`;
     $('title').textContent = s.title;
     const st = s.settings || {};
+    // Logs before phases had a single holds / holdSec / restSec.
+    const phases = st.phases || [{ holds: st.holds ?? '?', holdSec: st.holdSec ?? '?', restSec: st.restSec ?? '?' }];
+    const planText = phases.map(p => `${p.holds} × ${p.holdSec} s`).join(', ');
+    const restText = [...new Set(phases.map(p => p.restSec))].map(v => `${v} s`).join(' / ');
     const badges = [];
     if (OUTCOME[s.outcome]) badges.push(`<span class="badge warn">${esc(OUTCOME[s.outcome])}${s.failReason ? ` (${esc(s.failReason)})` : ''}</span>`);
     if (s.demo) badges.push('<span class="badge">Demo mode</span>');
-    $('meta').innerHTML = [esc(s.device), `${st.holds ?? '?'} × ${st.holdSec ?? '?'} s holds, ${st.restSec ?? '?'} s rest`, `target ${st.target ?? '?'}%`, ...badges].map(x => `<span>${x}</span>`).join('');
+    $('meta').innerHTML = [esc(s.device), `${planText} holds, ${restText} rest`, `target ${st.target ?? '?'}%`, ...badges].map(x => `<span>${x}</span>`).join('');
 
     const cal = s.calibration || {};
     $('tiles').innerHTML = [
       ['Time above line', pct(s.onPct), 'across all holds'],
-      ['Holds done', `${s.holdsDone} of ${st.holds ?? '?'}`, `${st.holdSec ?? '?'} s each`],
+      ['Holds done', `${s.holdsDone} of ${st.holds ?? '?'}`, phases.length > 1 ? `${phases.length} phases` : `${st.holdSec ?? '?'} s each`],
       ['Signal range', cal.rangeDeg != null ? `${fix(cal.rangeDeg)}°` : '–', 'calm to deep breath'],
       ['Duration', s.durationSec != null ? mmss(s.durationSec) : '–', 'including calibration'],
     ].map(([l, v, sub]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${sub}</div></div>`).join('');
@@ -470,7 +474,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
     const ovLevels = ov.flatMap(h => h.points.map(p => p[1])).filter(v => v != null);
     if (!ovLevels.length) empty(ovBox, 'No holds in this session.');
     else lineChart(ovBox, {
-      title: 'Holds compared', x: [0, st.holdSec || 20], y: [Math.min(40, Math.floor(Math.min(...ovLevels) / 20) * 20), Math.max(140, Math.ceil(Math.max(...ovLevels) / 20) * 20)],
+      title: 'Holds compared', x: [0, Math.max(...(s.holds || []).map(h => h.plannedSec || 0), st.holdSec || 20)], y: [Math.min(40, Math.floor(Math.min(...ovLevels) / 20) * 20), Math.max(140, Math.ceil(Math.max(...ovLevels) / 20) * 20)],
       height: 280, series: ov, refs: [{ y: target, label: `target ${target}%` }], endLabels: true,
       yFmt: v => `${v}%`, xFmt: v => `${v} s`, tipX: v => `${v.toFixed(1)} s into the hold`, valFmt: pct, snap: 0.3,
     });
@@ -484,7 +488,7 @@ footer { color: var(--muted); font-size: 0.85rem; }
       items: holds.map(h => ({ label: `Hold ${h.hold}`, value: h.onPct, detail: `<div class="h">Hold ${h.hold}</div><div class="row"><span>Above line</span><span>${pct(h.onPct)}</span></div><div class="row"><span>Wobble</span><span>${fix(h.wobble)}</span></div><div class="row"><span>Drops</span><span>${h.drops}</span></div>` })),
     });
     $('holdRows').closest('.table-box').hidden = !holds.length;
-    $('holdRows').innerHTML = holds.map(h => `<tr><td>Hold ${h.hold}</td><td>${h.reachedTarget === false ? 'not reached' : `${fix(h.secondsToReach)} s`}</td><td>${fix(h.seconds, 0)} s</td><td>${pct(h.onPct)}</td><td>${pct(h.meanLevel)}</td><td>${fix(h.wobble)}</td><td>${h.drops}</td></tr>`).join('');
+    $('holdRows').innerHTML = holds.map(h => `<tr><td>Hold ${h.hold}${phases.length > 1 && h.phase ? ` · phase ${h.phase}` : ''}</td><td>${h.reachedTarget === false ? 'not reached' : `${fix(h.secondsToReach)} s`}</td><td>${fix(h.seconds, 0)} s</td><td>${pct(h.onPct)}</td><td>${pct(h.meanLevel)}</td><td>${fix(h.wobble)}</td><td>${h.drops}</td></tr>`).join('');
 
     // Calibration
     legend($('calibLegend'), [{ label: 'Calm breathing', kind: 'key-dot', color: 'var(--s1)' }, { label: 'Deep breath held', kind: 'key-dot', color: 'var(--s2)' }]);

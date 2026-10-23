@@ -76,3 +76,25 @@ test('smoother converges toward a step', () => {
   for (let i = 1; i <= 60; i++) v = sm.update(1, i / 60);
   assert.ok(v > 0.95);
 });
+
+// Objects made inside the vm context have other prototypes, so compare plain copies.
+const plain = v => JSON.parse(JSON.stringify(v));
+
+test('normalizePhases keeps valid phases, clamps values and falls back when empty', () => {
+  assert.deepEqual(plain(Core.normalizePhases([{ holds: 2, holdSec: 15, restSec: 30 }])), [{ holds: 2, holdSec: 15, restSec: 30 }]);
+  assert.deepEqual(plain(Core.normalizePhases([{ holds: 0, holdSec: 999, restSec: 'x' }])), [{ holds: 1, holdSec: 60, restSec: 40 }]);
+  assert.deepEqual(plain(Core.normalizePhases(null)), [{ holds: 4, holdSec: 20, restSec: 40 }]);
+  assert.equal(Core.normalizePhases(Array(10).fill({ holds: 1, holdSec: 10, restSec: 10 })).length, Core.MAX_PHASES);
+});
+
+test('buildPlan expands phases into holds in order, each with its own lengths', () => {
+  const plan = Core.buildPlan([{ holds: 2, holdSec: 15, restSec: 30 }, { holds: 1, holdSec: 25, restSec: 60 }]);
+  assert.deepEqual(plain(plan), [
+    { phase: 1, phaseHold: 1, phaseHolds: 2, holdSec: 15, restSec: 30 },
+    { phase: 1, phaseHold: 2, phaseHolds: 2, holdSec: 15, restSec: 30 },
+    { phase: 2, phaseHold: 1, phaseHolds: 1, holdSec: 25, restSec: 60 },
+  ]);
+  // 6 s prep + (10 + 15 + 3 + 30) × 2 + (10 + 25 + 3), no rest after the last hold.
+  assert.equal(Core.planSeconds(plan), 6 + 58 * 2 + 38);
+  assert.equal(Core.describePhases([{ holds: 2, holdSec: 15 }, { holds: 1, holdSec: 25 }]), '2 × 15 s, 1 × 25 s');
+});
