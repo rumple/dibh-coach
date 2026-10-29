@@ -70,6 +70,12 @@ Open the printed `https://…` link in Safari on the iPhone, tap **Test sound**,
 **Allow** motion access. Press Ctrl-C to stop the tunnel.
 
 On a laptop, open `http://localhost:8000` and use **demo mode** (hold the on-screen button to "breathe in").
+Demo mode skips calibration and goes straight to practice.
+
+To test sound quickly on the iPhone, tick **Demo breathes in by itself during holds**, set one short phase
+(for example 1 × 10 s), and start demo mode. The simulated chest goes above the line on its own during each
+hold, so the tone should play without touching the screen. A tap restarts audio that iOS stopped, so leave the
+screen alone or the test can hide a sound problem.
 
 ## iPhone notes
 

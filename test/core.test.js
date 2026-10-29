@@ -98,3 +98,10 @@ test('buildPlan expands phases into holds in order, each with its own lengths', 
   assert.equal(Core.planSeconds(plan), 6 + 58 * 2 + 38);
   assert.equal(Core.describePhases([{ holds: 2, holdSec: 15 }, { holds: 1, holdSec: 25 }]), '2 × 15 s, 1 × 25 s');
 });
+
+test('demo calibration maps the simulated chest to ~0% calm and ~100% at a deep breath', () => {
+  const cal = Core.demoCalibration();
+  assert.equal(cal.ok, true);
+  assert.ok(Math.abs(Core.level(Core.demoTilt(0), cal)) < 5);
+  assert.ok(Math.abs(Core.level(Core.demoTilt(1), cal) - 100) < 5);
+});

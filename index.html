@@ -245,6 +245,7 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       <button id="testSound">Test sound</button>
     </div>
     <button id="demo" class="link">Try it without the sensor (demo mode)</button>
+    <label class="check note"><input type="checkbox" id="autoBreathe"> Demo breathes in by itself during holds (hands-free sound test)</label>
 
     <section class="panel" id="historyPanel" hidden>
       <h2>Recent sessions</h2>
@@ -433,7 +434,19 @@ const Core = (() => {
     return phases.map(p => `${p.holds} × ${p.holdSec} s`).join(', ');
   }
 
-  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold, PHASE_LIMITS, MAX_PHASES, normalizePhases, buildPlan, planSeconds, describePhases };
+  // Demo mode's simulated chest: c = 0 is calm, 1 is a full deep breath. Returns [pitch, roll] in degrees.
+  function demoTilt(c) {
+    return [0.4 + c * 2.4, -0.3 + c * 0.6];
+  }
+
+  // The calibration demo mode would learn, so demo sessions can skip straight to practice.
+  function demoCalibration() {
+    const calm = Array.from({ length: 200 }, (_, i) => demoTilt(0.12 * Math.sin(i / 10)));
+    const deep = Array.from({ length: 50 }, () => demoTilt(1));
+    return calibrate(calm, deep, 0.1);
+  }
+
+  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold, PHASE_LIMITS, MAX_PHASES, normalizePhases, buildPlan, planSeconds, describePhases, demoTilt, demoCalibration };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
 </script>
@@ -443,7 +456,7 @@ if (typeof module !== 'undefined') module.exports = Core;
   const $ = id => document.getElementById(id);
 
   // ---------- Settings and history (per-device conveniences) ----------
-  const DEFAULTS = { phases: [{ holds: 4, holdSec: 20, restSec: 40 }], target: 75, voice: true, tone: true };
+  const DEFAULTS = { phases: [{ holds: 4, holdSec: 20, restSec: 40 }], target: 75, voice: true, tone: true, autoBreathe: false };
   const SETTINGS_KEY = 'dibh-coach.settings';
   const HISTORY_KEY = 'dibh-coach.history';
 
@@ -538,7 +551,7 @@ if (typeof module !== 'undefined') module.exports = Core;
       $('targetOut').textContent = settings.target + '%';
       save(SETTINGS_KEY, settings);
     });
-    for (const k of ['voice', 'tone']) {
+    for (const k of ['voice', 'tone', 'autoBreathe']) {
       $(k).checked = !!settings[k];
       $(k).addEventListener('change', () => { settings[k] = $(k).checked; save(SETTINGS_KEY, settings); });
     }
@@ -563,7 +576,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   // ---------- Sound and voice ----------
   const Sound = {
-    ctx: null, gain: null,
+    ctx: null, gain: null, on: false,
     init() {
       if (this.ctx) { this.ctx.resume?.(); return; }
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -579,14 +592,35 @@ if (typeof module !== 'undefined') module.exports = Core;
       osc.frequency.value = 392;
       osc.connect(this.gain);
       osc.start();
+      // Safari 27 interrupts Web Audio whenever speech plays and leaves it interrupted afterwards.
+      this.ctx.addEventListener('statechange', () => {
+        Rec.event('audio-state', { state: this.ctx.state });
+        this.wake();
+      });
       this.ctx.resume?.();
+    },
+    // Restart audio that iOS stopped. Resuming does not need a tap, but it cuts off speech,
+    // so wait while the voice is talking; speak() calls this again when it finishes.
+    wake() {
+      const ctx = this.ctx;
+      if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+      if ('speechSynthesis' in window && speechSynthesis.speaking) return;
+      ctx.resume().catch(() => { /* retried on the next tap or prompt */ });
     },
     tone(on) {
       if (!this.ctx) return;
-      this.gain.gain.setTargetAtTime(on && settings.tone ? 0.1 : 0, this.ctx.currentTime, 0.06);
+      on = on && settings.tone;
+      if (on) this.wake();
+      if (on === this.on) return;
+      this.on = on;
+      const g = this.gain.gain, t = this.ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.setTargetAtTime(on ? 0.1 : 0, t, 0.06);
     },
     beep(freq, dur, delay = 0, vol = 0.35) {
       if (!this.ctx) return;
+      this.wake();
       const t = this.ctx.currentTime + delay;
       const o = this.ctx.createOscillator(), g = this.ctx.createGain();
       o.type = 'triangle';
@@ -602,11 +636,16 @@ if (typeof module !== 'undefined') module.exports = Core;
     chime() { this.beep(523, 0.2); this.beep(784, 0.35, 0.18); },
   };
 
+  let utterance = null; // the current one, held so Safari cannot discard it mid-speech
   function speak(text) {
     if (!settings.voice || !('speechSynthesis' in window)) return;
     try {
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 0.95;
+      utterance = u;
+      u.addEventListener('start', () => Rec.event('voice-start', { text }));
+      u.addEventListener('end', () => { Rec.event('voice-end', { text }); Sound.wake(); });
+      u.addEventListener('error', e => { Rec.event('voice-error', { text, error: e.error }); Sound.wake(); });
       // Safari drops an utterance queued straight after cancel(), so only cancel when
       // something is playing and give it a moment. Otherwise speak now, inside the tap.
       if (speechSynthesis.speaking || speechSynthesis.pending) {
@@ -743,17 +782,19 @@ if (typeof module !== 'undefined') module.exports = Core;
     feed(p, r, performance.now() / 1000);
   }
 
-  // Demo: a simulated chest. Pressing the button is a deep breath.
+  // Demo: a simulated chest. Pressing the button is a deep breath; with auto-breathe on,
+  // the chest also breathes in by itself while breathing in and holding, so no taps are needed.
   const Demo = { held: false, v: 0, timer: null };
   function startDemo() {
     $('demoBtn').hidden = false;
     if (Demo.timer) return;
     Demo.timer = setInterval(() => {
       const t = performance.now() / 1000;
-      Demo.v += ((Demo.held ? 1 : 0) - Demo.v) * 0.05;
-      const tidal = Demo.held ? 0 : 0.12 * Math.sin((t * 2 * Math.PI) / 4.5);
+      const deep = Demo.held || (settings.autoBreathe && (S.phase === 'in' || S.phase === 'hold'));
+      Demo.v += ((deep ? 1 : 0) - Demo.v) * 0.05;
+      const tidal = deep ? 0 : 0.12 * Math.sin((t * 2 * Math.PI) / 4.5);
       const chest = Demo.v + tidal + (Math.random() - 0.5) * 0.03;
-      feed(0.4 + chest * 2.4, -0.3 + chest * 0.6, t);
+      feed(...Core.demoTilt(chest), t);
     }, 16);
   }
   function stopDemo() { clearInterval(Demo.timer); Demo.timer = null; Demo.held = false; $('demoBtn').hidden = true; }
@@ -815,6 +856,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     const reuse = reuseCal && S.cal;
     plan = Core.buildPlan(settings.phases);
     Rec.start(reuse ? S.cal : null);
+    Rec.event('audio-state', { state: Sound.ctx?.state ?? 'none' });
     if (reuse) startPractice(); else startCalibration();
     lastFrame = performance.now();
     requestAnimationFrame(frame);
@@ -985,8 +1027,9 @@ if (typeof module !== 'undefined') module.exports = Core;
         break;
     }
 
-    // Feedback sound: steady tone while above the line during a hold attempt.
-    const active = S.phase === 'in' || S.phase === 'hold';
+    // Feedback sound: steady tone while above the line during a hold attempt,
+    // quiet during the spoken 3-2-1 at the end of the hold.
+    const active = S.phase === 'in' || (S.phase === 'hold' && remaining() > 3);
     Sound.tone(active && S.gateOn);
   }
 
@@ -1105,6 +1148,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (!S.running) return;
     if (document.visibilityState === 'hidden') { Sound.tone(false); return; }
     keepAwake();
+    Sound.wake();
     lastFrame = performance.now();
     Rec.event('resumed-after-hidden', { phase: S.phase });
     if (CAL_PHASES.includes(S.phase)) {
@@ -1123,7 +1167,8 @@ if (typeof module !== 'undefined') module.exports = Core;
     speak('Starting.');
     S.demo = demo;
     S.samples = 0; S.latest = null; smP.reset(); smR.reset();
-    if (demo) { startDemo(); startSession(false); return; }
+    // Demo mode skips calibration: its simulated chest has a known range.
+    if (demo) { startDemo(); S.cal = Core.demoCalibration(); startSession(true); return; }
 
     if (!window.isSecureContext) {
       showError('<strong>This page must be opened over <code>https://</code>.</strong> iPhone only gives motion data to secure pages. Use the https link from <code>serve.sh</code>.');
@@ -1149,6 +1194,8 @@ if (typeof module !== 'undefined') module.exports = Core;
     });
   }
 
+  // A tap during a session also restarts audio iOS stopped.
+  document.addEventListener('pointerdown', () => { if (S.running) Sound.wake(); });
   $('start').addEventListener('click', () => begin(false));
   $('demo').addEventListener('click', () => begin(true));
   $('testSound').addEventListener('click', () => {
