@@ -21,8 +21,20 @@ clinical threshold.
 4. **Summary**: time above line, average level, wobble (standard deviation of level) and drops per hold.
    Recent sessions are kept in the browser's local storage.
 
-The app is `index.html` (no build step, no dependencies). Pure signal maths lives in the
-`<script id="core">` block and is tested with Node. `server.py` serves it for testing.
+There is no build step and there are no dependencies. `index.html` holds the markup and styles, and the
+scripts are in `js/`:
+
+| File | Contents |
+|---|---|
+| `phone-check.js` | The first screen: sensor test, sound test, gating setup |
+| `config.js` | The setup screen: phases, settings, recent sessions, log export |
+| `coaching.js` | The live session and summary. Also the entry point, which imports the others |
+| `demo.js` | Demo mode's simulated chest |
+| `shared.js` | Stored settings, sound and voice, wake lock, session logs, screens |
+| `core.js` | Pure maths and check rules with no page access, tested with Node |
+
+`core.js` is a plain script and the others are ES modules, so opening `index.html` from disk won't work. Use
+`server.py`, which serves only the page and `js/`.
 
 ## Phone check
 

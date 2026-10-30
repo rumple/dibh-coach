@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serve Breath Hold Coach for testing over an HTTPS tunnel.
 
-Only / and /index.html are served, so nothing else in the repo (such as .git) is reachable through the tunnel.
+Only the page and the scripts in js/ are served, so nothing else in the repo (such as .git) is reachable through the tunnel.
 
 Usage: python3 server.py [port]
 """
@@ -10,15 +10,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PAGES = {"/": "index.html", "/index.html": "index.html"}
+HTML = "text/html; charset=utf-8"
+# Browsers refuse to run module scripts without a JavaScript content type.
+FILES = {
+    "/": (ROOT / "index.html", HTML),
+    "/index.html": (ROOT / "index.html", HTML),
+    **{f"/js/{p.name}": (p, "text/javascript; charset=utf-8") for p in (ROOT / "js").glob("*.js")},
+}
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        name = PAGES.get(self.path.split("?")[0])
-        body = (ROOT / name).read_bytes() if name else b"not found"
-        self.send_response(200 if name else 404)
-        self.send_header("Content-Type", "text/html; charset=utf-8" if name else "text/plain")
+        found = FILES.get(self.path.split("?")[0])
+        body = found[0].read_bytes() if found else b"not found"
+        self.send_response(200 if found else 404)
+        self.send_header("Content-Type", found[1] if found else "text/plain")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

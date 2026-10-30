@@ -1,12 +1,11 @@
-// Runs the pure helpers from index.html's <script id="core"> block under Node.
+// Runs the pure helpers from js/core.js under Node.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const src = html.match(/<script id="core">([\s\S]*?)<\/script>/)[1];
+const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'core.js'), 'utf8');
 const mod = { exports: {} };
 vm.runInNewContext(src, { module: mod });
 const Core = mod.exports;
