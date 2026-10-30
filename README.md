@@ -24,12 +24,39 @@ clinical threshold.
 The app is `index.html` (no build step, no dependencies). Pure signal maths lives in the
 `<script id="core">` block and is tested with Node. `server.py` serves it for testing.
 
+## Phone check
+
+The app opens on a **Check your phone** screen, and the setup screen (phases and so on) stays hidden until
+the check is passed. What can be read without a prompt fills in when the page opens. The rest needs a tap on
+iPhone, so **Check my phone** runs it (up to 3 s). It runs once per page load; reloading checks again.
+
+| Check | How | If it fails |
+|---|---|---|
+| HTTPS page, motion API | `isSecureContext`, `DeviceMotionEvent` | Blocks real sessions |
+| Motion permission | `requestPermission()` where it exists | Blocks real sessions |
+| Accelerometer | At least 3 valid readings within 3 s | Blocks real sessions |
+| Sensor quality | Under 10 readings a second, values that never change, gravity outside 7–13 m/s² | Warning |
+| Tone and beeps | `AudioContext` exists; not stopped after the tap | Warning |
+| Hearing the coach | Plays the hold tone, the double beep and a voice in turn, using the session's sound code, and asks **Did you hear all of that?** | Warning |
+| Spoken cues | `speechSynthesis` and its voices, if spoken cues are on | Warning |
+| Screen awake | A real wake lock request | Warning |
+| Settings and logs | A test `localStorage` write | Warning |
+
+- **All passed:** **Continue** opens setup.
+- **Warnings:** each shows its fix, and **Continue anyway** opens setup.
+- **Blocked:** **Check again**, or **Use demo mode**, which opens setup with the real **Start** hidden.
+
+A row only gets a tick once it has been tested. Web pages can't see the silent switch or the volume, which is
+why the check asks: **Tone and beeps** and **Spoken cues** stay unticked until you answer **Yes**, which also clears
+the silent mode and missing voice warnings. A notice in the page stays visible if the browser is too old to run
+the app's script. Session logs record the results under `capabilities`, including the measured sensor rate.
+
 ## Session logs
 
 Every session (completed, stopped early, or failed calibration) produces a detailed record:
 
 - settings (including `phases`; `holds` is the planned total, `holdSec`/`restSec` the longest), device user
-  agent, outcome, start/end time
+  agent, phone check results (`capabilities`), outcome, start/end time
 - calibration: tilt range between calm and deep breaths (`rangeDeg`), calm-breathing and hold spread,
   learned axis
 - each hold: phase, planned length (`plannedSec`), time to reach the line, length, % above line, mean level,
@@ -66,10 +93,11 @@ iPhone Safari only gives motion data to `https://` pages, so run:
 ./serve.sh            # local server + temporary HTTPS tunnel
 ```
 
-Open the printed `https://…` link in Safari on the iPhone, tap **Test sound**, then **Start** and
-**Allow** motion access. Press Ctrl-C to stop the tunnel.
+Open the printed `https://…` link in Safari on the iPhone, tap **Check my phone**, **Allow** motion access,
+answer the sound question, then tap **Continue** and **Start**. Press Ctrl-C to stop the tunnel.
 
-On a laptop, open `http://localhost:8000` and use **demo mode** (hold the on-screen button to "breathe in").
+On a laptop, open `http://localhost:8000`, tap **Check my phone**, then **Use demo mode** (no sensor, so the
+check blocks real sessions), and start demo mode (hold the on-screen button to "breathe in").
 Demo mode skips calibration and goes straight to practice.
 
 To test sound quickly on the iPhone, tick **Demo breathes in by itself during holds**, set one short phase

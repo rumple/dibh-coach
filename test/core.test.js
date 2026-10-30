@@ -105,3 +105,125 @@ test('demo calibration maps the simulated chest to ~0% calm and ~100% at a deep 
   assert.ok(Math.abs(Core.level(Core.demoTilt(0), cal)) < 5);
   assert.ok(Math.abs(Core.level(Core.demoTilt(1), cal) - 100) < 5);
 });
+
+// A phone lying still: 60 readings a second with a little noise around gravity.
+const stillPhone = (n = 90, hz = 60) => Array.from({ length: n }, (_, i) => [0.01 * Math.sin(i), 0.02 * Math.cos(i), -9.81, i / hz]);
+const ids = f => plain(Core.assessCapabilities(f).map(i => i.id));
+const levels = f => Object.fromEntries(Core.assessCapabilities(f).map(i => [i.id, i.level]));
+const healthy = { secure: true, motionApi: true, motionPermission: 'granted', motion: Core.assessMotion(stillPhone()), audio: true, audioRunning: true, heard: true, ringerMatters: false, voiceOn: true, speech: true, voices: 20, wakeLock: 'ok', storage: true };
+
+test('assessMotion measures rate and gravity from a working sensor', () => {
+  const m = Core.assessMotion(stillPhone());
+  assert.equal(m.usable, true);
+  assert.equal(m.hz, 60);
+  assert.ok(Math.abs(m.gravity - 9.81) < 0.01);
+  assert.equal(m.stuck, false);
+});
+
+test('assessMotion treats too few readings as unusable and spots a stuck sensor', () => {
+  assert.equal(Core.assessMotion([]).usable, false);
+  assert.equal(Core.assessMotion(stillPhone(2)).usable, false);
+  const frozen = Array.from({ length: 20 }, (_, i) => [0, 0, -9.81, i / 60]);
+  assert.equal(Core.assessMotion(frozen).stuck, true);
+});
+
+test('a healthy phone has no issues', () => {
+  assert.deepEqual(ids(healthy), []);
+});
+
+test('nothing is reported before it has been checked', () => {
+  assert.deepEqual(ids({}), []);
+  assert.deepEqual(ids({ secure: true, motionApi: true, audio: true, speech: true, voiceOn: true, storage: true }), []);
+});
+
+test('motion problems block a real session', () => {
+  for (const [fact, id] of [
+    [{ secure: false }, 'https'],
+    [{ motionApi: false }, 'motion-api'],
+    [{ motionPermission: 'denied', motion: undefined }, 'motion-denied'],
+    [{ motionPermission: 'error', motion: undefined }, 'motion-error'],
+    [{ motion: Core.assessMotion([]) }, 'motion-none'],
+  ]) {
+    assert.equal(levels({ ...healthy, ...fact })[id], 'block', id);
+  }
+});
+
+test('the first motion problem is the only one reported', () => {
+  assert.deepEqual(ids({ ...healthy, secure: false, motionApi: false, motion: Core.assessMotion([]) }), ['https']);
+});
+
+test('poor sensor quality warns but does not block', () => {
+  const slow = Core.assessMotion(stillPhone(20, 5));
+  assert.equal(levels({ ...healthy, motion: slow })['motion-slow'], 'warn');
+  const frozen = Core.assessMotion(Array.from({ length: 20 }, (_, i) => [0, 0, -9.81, i / 60]));
+  assert.equal(levels({ ...healthy, motion: frozen })['motion-stuck'], 'warn');
+  const shaken = Core.assessMotion(stillPhone().map(r => [r[0], r[1], -20, r[3]]));
+  assert.equal(levels({ ...healthy, motion: shaken })['motion-gravity'], 'warn');
+});
+
+test('sound, screen and storage problems warn', () => {
+  for (const [fact, id, row] of [
+    [{ audio: false }, 'audio', 'audio'],
+    [{ audioRunning: false }, 'audio-stopped', 'audio'],
+    [{ heard: false }, 'unheard', 'hearing'],
+    [{ heard: undefined, ringerMatters: true }, 'ringer', 'hearing'],
+    [{ speech: false }, 'speech', 'speech'],
+    [{ heard: undefined, voices: 0 }, 'voices', 'speech'],
+    [{ wakeLock: 'unsupported' }, 'wake-lock', 'wake'],
+    [{ wakeLock: 'denied' }, 'wake-lock', 'wake'],
+    [{ storage: false }, 'storage', 'storage'],
+  ]) {
+    const [issue] = Core.assessCapabilities({ ...healthy, ...fact });
+    assert.equal(issue.id, id);
+    assert.equal(issue.level, 'warn', id);
+    assert.equal(issue.row, row, id);
+  }
+});
+
+test('hearing the coach settles the silent mode and missing voice warnings', () => {
+  assert.deepEqual(ids({ ...healthy, heard: true, ringerMatters: true, voices: 0 }), []);
+  assert.deepEqual(ids({ ...healthy, heard: false, ringerMatters: true }), ['unheard']);
+});
+
+test('missing speech does not warn when spoken cues are turned off', () => {
+  assert.deepEqual(ids({ ...healthy, voiceOn: false, speech: false }), []);
+  assert.deepEqual(ids({ ...healthy, voiceOn: false, voices: 0 }), []);
+});
+
+const rowStatus = f => Object.fromEntries(Core.capabilityRows(f).map(r => [r.id, r.status]));
+
+test('capability rows start pending and all pass on a healthy phone', () => {
+  assert.ok(Object.values(rowStatus({})).every(v => v === 'pending'));
+  assert.ok(Object.values(rowStatus(healthy)).every(v => v === 'pass'));
+});
+
+test('capability rows show the worst problem on the right row', () => {
+  const r = rowStatus({ ...healthy, secure: false, wakeLock: 'denied' });
+  assert.equal(r.secure, 'block');
+  assert.equal(r.wake, 'warn');
+  assert.equal(r.audio, 'pass');
+  const motion = Core.capabilityRows({ ...healthy, motion: Core.assessMotion([]) }).find(x => x.id === 'motion');
+  assert.equal(motion.status, 'block');
+  assert.equal(motion.issues[0].id, 'motion-none');
+});
+
+test('sound rows pass only after the person says they heard it', () => {
+  const before = rowStatus({ ...healthy, heard: undefined });
+  assert.equal(before.audio, 'pending');
+  assert.equal(before.speech, 'pending');
+  const no = rowStatus({ ...healthy, heard: false });
+  assert.equal(no.audio, 'pending');
+  assert.equal(no.speech, 'pending');
+  assert.equal(no.hearing, 'warn');
+  const yes = rowStatus(healthy);
+  assert.equal(yes.audio, 'pass');
+  assert.equal(yes.speech, 'pass');
+});
+
+test('capability rows report the sensor rate and spoken cues turned off', () => {
+  const rows = Core.capabilityRows({ ...healthy, voiceOn: false, speech: false });
+  assert.equal(rows.find(x => x.id === 'motion').note, 'about 60 readings a second');
+  const speech = rows.find(x => x.id === 'speech');
+  assert.equal(speech.status, 'pending');
+  assert.equal(speech.note, 'turned off');
+});

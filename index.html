@@ -125,6 +125,7 @@ button {
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 button.big { padding: 16px 28px; font-size: 1.1rem; flex: 1 1 auto; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.6; cursor: default; }
 button.link { background: none; border: none; padding: 6px 0; color: var(--accent); text-decoration: underline; }
 
 .note { font-size: 0.9rem; color: var(--muted); }
@@ -134,6 +135,20 @@ button.link { background: none; border: none; padding: 6px 0; color: var(--accen
   border-radius: 12px; padding: 12px 14px;
 }
 .error strong { color: var(--off); }
+
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.check-row { display: grid; grid-template-columns: 1.6em 1fr; gap: 2px 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.check-row .mark { font-weight: 700; color: var(--muted); }
+.check-row.pass .mark { color: var(--on); }
+.check-row.warn, .check-row.block { border-color: var(--off); }
+.check-row.warn .mark, .check-row.block .mark, .check-row.block .check-label { color: var(--off); }
+.check-row.block { background: color-mix(in srgb, var(--off) 10%, var(--surface)); }
+.check-label { font-weight: 700; }
+.check-row.pending .check-label { font-weight: 400; color: var(--muted); }
+.check-note { font-weight: 400; color: var(--muted); font-size: 0.9rem; }
+.check-row p { grid-column: 2; font-size: 0.9rem; }
+.check-row p strong { display: block; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .history li {
@@ -194,8 +209,38 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
 </head>
 <body>
 
+<!-- Stays visible only if the app script cannot run, so the phone check cannot report it. -->
+<p id="oldBrowser" class="error" role="alert" style="margin:16px"><strong>This browser cannot run the coach.</strong> Update your phone, or open the link in its main browser with JavaScript turned on.</p>
+
+<!-- Phone check: the first screen. Setup stays hidden until this passes. -->
+<main id="check">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Breath Hold Coach</p>
+      <h1>Check your phone</h1>
+    </div>
+    <p class="lede">The coach needs your phone’s motion sensor and sound. This takes a few seconds. If asked about motion access, tap Allow.</p>
+    <ul class="checks" id="checkRows" aria-live="polite"></ul>
+    <section class="panel" id="soundStep" hidden>
+      <h2>Did you hear all of that?</h2>
+      <p class="note" id="soundHint"></p>
+      <div class="actions">
+        <button id="heardYes">Yes</button>
+        <button id="heardNo">No</button>
+        <button id="soundAgain">Play again</button>
+      </div>
+    </section>
+    <div class="actions">
+      <button id="runCheck" class="primary big">Check my phone</button>
+      <button id="checkContinue" class="primary big" hidden>Continue</button>
+      <button id="checkAgain" hidden>Check again</button>
+    </div>
+    <button id="checkDemo" class="link" hidden>Use demo mode</button>
+  </div>
+</main>
+
 <!-- Start screen -->
-<main id="intro">
+<main id="intro" hidden>
   <div class="wrap">
     <div>
       <p class="eyebrow">Deep inspiration breath hold</p>
@@ -204,6 +249,11 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
     <p class="lede">Practise the deep breath hold used in breast radiotherapy. Your phone rests on your chest, measures how high your breath lifts it, and tells you by sound whether you are holding above the line.</p>
 
     <div id="error" class="error" hidden role="alert"></div>
+
+    <div id="demoOnly" class="error" hidden>
+      <strong>Demo mode only.</strong> This phone did not pass the check, so real sessions are off.
+      <button id="backToCheck" class="link">Back to phone check</button>
+    </div>
 
     <section class="panel">
       <h2>Before you start</h2>
@@ -242,7 +292,6 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
 
     <div class="actions">
       <button id="start" class="primary big">Start</button>
-      <button id="testSound">Test sound</button>
     </div>
     <button id="demo" class="link">Try it without the sensor (demo mode)</button>
     <label class="check note"><input type="checkbox" id="autoBreathe"> Demo breathes in by itself during holds (hands-free sound test)</label>
@@ -446,7 +495,89 @@ const Core = (() => {
     return calibrate(calm, deep, 0.1);
   }
 
-  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold, PHASE_LIMITS, MAX_PHASES, normalizePhases, buildPlan, planSeconds, describePhases, demoTilt, demoCalibration };
+  // Phone check: judges a short burst of motion readings, each [x, y, z, seconds].
+  const MOTION_MIN_READINGS = 3, MOTION_MIN_HZ = 10, GRAVITY_RANGE = [7, 13];
+
+  function assessMotion(readings) {
+    const count = readings.length;
+    if (count < MOTION_MIN_READINGS) return { usable: false, count, hz: 0 };
+    const secs = readings[count - 1][3] - readings[0][3];
+    return {
+      usable: true,
+      count,
+      hz: secs > 0 ? Math.round((count - 1) / secs) : 0,
+      gravity: Math.round(quantile(readings.map(r => Math.hypot(r[0], r[1], r[2])), 0.5) * 100) / 100,
+      stuck: count >= 10 && [0, 1, 2].every(i => readings.every(r => r[i] === readings[0][i])),
+    };
+  }
+
+  // Phone check: turns gathered facts into problems to show. A fact left undefined has not been checked yet.
+  // Motion problems block a real session; everything else warns.
+  function assessCapabilities(f) {
+    const out = [];
+    const add = (id, level, row, title, detail) => out.push({ id, level, row, title, detail });
+    const mainBrowser = 'Open the link in your phone’s main browser (Safari on iPhone, Chrome on Android), not inside another app such as WhatsApp.';
+
+    if (f.secure === false) {
+      add('https', 'block', 'secure', 'This page must be opened over https://', 'Phones only give motion data to secure pages. Use the https:// link.');
+    } else if (f.motionApi === false) {
+      add('motion-api', 'block', 'motion', 'This browser has no motion sensor access', mainBrowser);
+    } else if (f.motionPermission === 'denied') {
+      add('motion-denied', 'block', 'motion', 'Motion access was not allowed', 'Close this tab, open the link again, tap Check my phone and choose Allow.');
+    } else if (f.motionPermission === 'error') {
+      add('motion-error', 'block', 'motion', 'Could not turn on the motion sensor', mainBrowser);
+    } else if (f.motion && !f.motion.usable) {
+      add('motion-none', 'block', 'motion', 'No motion readings arrived', `This device may have no motion sensor, or the browser is blocking it. ${mainBrowser}`);
+    } else if (f.motion) {
+      if (f.motion.hz < MOTION_MIN_HZ) add('motion-slow', 'warn', 'motion', 'The motion sensor is slow', `It sends about ${f.motion.hz} readings a second, so the breath level may lag.`);
+      if (f.motion.stuck) add('motion-stuck', 'warn', 'motion', 'The motion sensor looks stuck', 'Its readings never changed during the check, so calibration may fail. Restart the browser and try again.');
+      if (f.motion.gravity < GRAVITY_RANGE[0] || f.motion.gravity > GRAVITY_RANGE[1]) add('motion-gravity', 'warn', 'motion', 'The motion readings look wrong', 'Keep the phone still during the check, then try again. Results may be unreliable if this keeps happening.');
+    }
+
+    if (f.audio === false) {
+      add('audio', 'warn', 'audio', 'The tone and beeps cannot play', 'This browser has no Web Audio, so you will not hear when you are above or below the line. Update your phone or use its main browser.');
+    } else if (f.audioRunning === false) {
+      add('audio-stopped', 'warn', 'audio', 'The tone and beeps may not play', 'The browser did not start audio. Close other apps that are playing sound and check again.');
+    }
+    // Hearing the sound settles what the page cannot measure itself.
+    if (f.heard === false) {
+      add('unheard', 'warn', 'hearing', 'You did not hear the coach', 'Turn the ringer on and the volume up, then tap Play again. The coach gives its feedback by sound.');
+    } else if (f.ringerMatters && f.heard !== true) {
+      add('ringer', 'warn', 'hearing', 'Silent mode can mute the coach', 'On this iOS version web pages cannot play through silent mode. Turn the ringer on and the volume up.');
+    }
+    if (f.voiceOn) {
+      if (f.speech === false) add('speech', 'warn', 'speech', 'Spoken cues are not available', 'You will hear tones but no voice prompts or countdown.');
+      else if (f.voices === 0 && f.heard !== true) add('voices', 'warn', 'speech', 'Spoken cues may not play', 'No voices are installed for this browser, so you may hear tones but no voice prompts or countdown.');
+    }
+
+    if (f.wakeLock === 'unsupported' || f.wakeLock === 'denied') {
+      add('wake-lock', 'warn', 'wake', 'The screen may turn off', 'Set the screen timeout (Auto-Lock on iPhone) to Never or its longest setting. If the screen turns off, the current hold restarts.');
+    }
+    if (f.storage === false) add('storage', 'warn', 'storage', 'Results will not be saved', 'This browser is blocking storage, so settings, history and logs will be lost. Private browsing can cause this.');
+    return out;
+  }
+
+  // One row per check for the phone check screen. status: pending, pass, warn or block.
+  // A row passes only once something was tested; sound counts only when the person says they heard it.
+  function capabilityRows(f) {
+    const issues = assessCapabilities(f);
+    const row = (id, label, checked, note) => {
+      const mine = issues.filter(i => i.row === id);
+      const status = mine.some(i => i.level === 'block') ? 'block' : mine.length ? 'warn' : checked ? 'pass' : 'pending';
+      return { id, label, status, note: mine.length ? undefined : note, issues: mine };
+    };
+    return [
+      row('secure', 'Secure connection', f.secure === true),
+      row('motion', 'Motion sensor', !!f.motion && f.motion.usable, f.motion && `about ${f.motion.hz} readings a second`),
+      row('audio', 'Tone and beeps', f.audioRunning === true && f.heard === true),
+      row('hearing', 'You can hear the coach', f.heard === true),
+      row('speech', 'Spoken cues', f.voiceOn !== false && f.heard === true, f.voiceOn === false ? 'turned off' : undefined),
+      row('wake', 'Screen stays awake', f.wakeLock === 'ok'),
+      row('storage', 'Saved results', f.storage === true),
+    ];
+  }
+
+  return { clamp, mean, sd, quantile, tilt, makeSmoother, calibrate, level, gate, summarizeHold, PHASE_LIMITS, MAX_PHASES, normalizePhases, buildPlan, planSeconds, describePhases, demoTilt, demoCalibration, assessMotion, assessCapabilities, capabilityRows };
 })();
 if (typeof module !== 'undefined') module.exports = Core;
 </script>
@@ -454,6 +585,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+  $('oldBrowser').hidden = true;
 
   // ---------- Settings and history (per-device conveniences) ----------
   const DEFAULTS = { phases: [{ holds: 4, holdSec: 20, restSec: 40 }], target: 75, voice: true, tone: true, autoBreathe: false };
@@ -659,8 +791,16 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   // ---------- Screen wake lock ----------
   let wakeLock = null;
+  // Returns 'ok', 'unsupported' or 'denied'.
   async function keepAwake() {
-    try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch { /* not granted */ }
+    if (!('wakeLock' in navigator)) return 'unsupported';
+    try {
+      if (!wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+      return 'ok';
+    } catch (e) {
+      Rec.event('wake-lock-failed', { error: e && e.name });
+      return 'denied';
+    }
   }
   function releaseAwake() { try { wakeLock?.release(); } catch { /* ignore */ } wakeLock = null; }
 
@@ -699,6 +839,7 @@ if (typeof module !== 'undefined') module.exports = Core;
         startedAt: new Date().toISOString(),
         demo: S.demo,
         userAgent: navigator.userAgent,
+        capabilities: { ...Caps.facts, issues: Caps.issues().map(i => i.id) },
         // holds is the planned total; holdSec / restSec are the longest, for readers of the older format.
         settings: {
           ...settings, phases: settings.phases.map(p => ({ ...p })), holds: plan.length,
@@ -805,7 +946,7 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   // ---------- Screens ----------
   function show(id) {
-    for (const s of ['intro', 'session', 'summary']) $(s).hidden = s !== id;
+    for (const s of ['check', 'intro', 'session', 'summary']) $(s).hidden = s !== id;
     window.scrollTo(0, 0);
   }
   function showError(html) { $('error').innerHTML = html; $('error').hidden = false; show('intro'); }
@@ -875,7 +1016,7 @@ if (typeof module !== 'undefined') module.exports = Core;
     stopDemo();
     const range = S.lastCal?.rangeDeg;
     const msgs = {
-      nosensor: '<strong>No motion data arrived.</strong> Open this page in Safari over <code>https://</code> and tap <em>Allow</em> when asked about motion access. If you tapped <em>Don’t Allow</em> before, close the tab, open the link again and tap Start.',
+      nosensor: '<strong>No motion data arrived.</strong> Open the link in your phone’s main browser (Safari on iPhone, Chrome on Android) and tap <em>Allow</em> if asked about motion access. If you tapped <em>Don’t Allow</em> before, close the tab, open the link again and tap Start.',
       weak: `<strong>The phone barely moved when you breathed in</strong>${range != null ? ` (about ${Math.max(0, range).toFixed(1)}° between calm and deep breaths)` : ''}. Make sure the phone lies flat on the lower breastbone without sliding, breathe into your chest, and try again.`,
       'few-samples': '<strong>Not enough data to calibrate.</strong> Keep the screen on and the page open during calibration, then try again.',
     };
@@ -1159,6 +1300,210 @@ if (typeof module !== 'undefined') module.exports = Core;
     }
   });
 
+  // ---------- Phone check ----------
+  const Caps = {
+    facts: {},
+    stage: 'idle', // idle, checking or done
+    demoOnly: false,
+    current() { return { ...this.facts, voiceOn: settings.voice }; },
+    issues() { return Core.assessCapabilities(this.current()); },
+    blocked() { return this.issues().some(i => i.level === 'block'); },
+    canPlay() { return this.facts.audio || (this.facts.speech && settings.voice); },
+    // Everything that can be read without a tap or a prompt.
+    readStatic() {
+      const ua = navigator.userAgent;
+      const iOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      Object.assign(this.facts, {
+        secure: window.isSecureContext,
+        motionApi: typeof DeviceMotionEvent !== 'undefined',
+        audio: !!(window.AudioContext || window.webkitAudioContext),
+        ringerMatters: iOS && !navigator.audioSession,
+        speech: 'speechSynthesis' in window,
+        storage: storageWorks(),
+      });
+      if (!('wakeLock' in navigator)) this.facts.wakeLock = 'unsupported';
+    },
+    // Voices can load late, so an empty list only counts after a short wait.
+    watchVoices() {
+      if (!this.facts.speech) return;
+      let waited = false;
+      const read = () => {
+        const n = speechSynthesis.getVoices().length;
+        if (n || waited) { this.facts.voices = n; renderCheck(); }
+      };
+      speechSynthesis.addEventListener?.('voiceschanged', read);
+      read();
+      setTimeout(() => { waited = true; read(); }, 2000);
+    },
+  };
+
+  function storageWorks() {
+    try { localStorage.setItem('dibh-coach.check', '1'); localStorage.removeItem('dibh-coach.check'); return true; } catch { return false; }
+  }
+
+  const CHECK_MARKS = { pending: ['–', 'not checked yet'], pass: ['✓', 'passed'], warn: ['!', 'warning'], block: ['✕', 'failed'] };
+
+  function renderCheck() {
+    const ul = $('checkRows');
+    ul.textContent = '';
+    for (const row of Core.capabilityRows(Caps.current())) {
+      const [mark, word] = CHECK_MARKS[row.status];
+      const li = document.createElement('li');
+      li.className = 'check-row ' + row.status;
+      const m = document.createElement('span');
+      m.className = 'mark';
+      m.textContent = mark;
+      m.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'check-label';
+      label.textContent = row.label;
+      const sr = document.createElement('span');
+      sr.className = 'sr';
+      sr.textContent = `: ${word}`;
+      label.append(sr);
+      if (row.note) {
+        const note = document.createElement('span');
+        note.className = 'check-note';
+        note.textContent = ` · ${row.note}`;
+        label.append(note);
+      }
+      li.append(m, label);
+      for (const it of row.issues) {
+        const p = document.createElement('p');
+        const title = document.createElement('strong');
+        title.textContent = it.title;
+        p.append(title, it.detail);
+        li.append(p);
+      }
+      ul.append(li);
+    }
+
+    const blocked = Caps.blocked(), done = Caps.stage === 'done', heard = Caps.facts.heard;
+    const askSound = done && !blocked && Caps.canPlay();
+    const mustAnswer = askSound && heard === undefined;
+    $('soundStep').hidden = !askSound || heard === true;
+    const parts = [];
+    if (Caps.facts.audio) {
+      if (settings.tone) parts.push('a steady tone');
+      parts.push('two beeps');
+    }
+    if (Caps.facts.speech && settings.voice) parts.push('a voice');
+    $('soundHint').textContent = `You should hear ${parts.join(', then ')}. Leave the phone face up, as it will be on your chest.`;
+    $('runCheck').hidden = done || (blocked && Caps.stage === 'idle');
+    $('runCheck').disabled = Caps.stage === 'checking';
+    $('runCheck').textContent = Caps.stage === 'checking' ? 'Checking your phone…' : 'Check my phone';
+    $('checkContinue').hidden = !done || blocked || mustAnswer;
+    $('checkContinue').textContent = Caps.issues().length ? 'Continue anyway' : 'Continue';
+    $('checkAgain').hidden = !(done || blocked) || mustAnswer || Caps.stage === 'checking';
+    $('checkDemo').hidden = !blocked;
+  }
+
+  // Listens for up to 3 s, or 1.5 s when readings arrive promptly. Own listener, so it cannot affect the session.
+  function probeMotion() {
+    return new Promise(resolve => {
+      const readings = [], started = performance.now();
+      let hidden = false;
+      const onReading = e => {
+        const g = e.accelerationIncludingGravity;
+        if (g && g.x != null && g.y != null && g.z != null) readings.push([g.x, g.y, g.z, performance.now() / 1000]);
+      };
+      const onHide = () => { if (document.visibilityState === 'hidden') hidden = true; };
+      window.addEventListener('devicemotion', onReading);
+      document.addEventListener('visibilitychange', onHide);
+      const timer = setInterval(() => {
+        const ms = performance.now() - started;
+        if (!hidden && ms < 3000 && !(ms >= 1500 && readings.length >= 10)) return;
+        clearInterval(timer);
+        window.removeEventListener('devicemotion', onReading);
+        document.removeEventListener('visibilitychange', onHide);
+        resolve({ readings, hidden });
+      }, 100);
+    });
+  }
+
+  // Plays each sound a session uses, one at a time, through the same code the session uses.
+  // Speech goes last and starts only when none is playing, because Safari interrupts audio during speech.
+  let testRun = 0;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  async function playTestSound() {
+    const run = ++testRun;
+    Sound.init();
+    for (let i = 0; i < 30 && window.speechSynthesis?.speaking; i++) await wait(100);
+    await wait(300);
+    if (run !== testRun) return;
+    Sound.tone(true);
+    await wait(1200);
+    if (run !== testRun) return;
+    Sound.tone(false);
+    await wait(400);
+    if (run !== testRun) return;
+    Sound.alert();
+    await wait(800);
+    if (run !== testRun) return;
+    speak('This is how the coach sounds.');
+  }
+
+  function stopTestSound() {
+    testRun++;
+    Sound.tone(false);
+    try { speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+
+  // Runs inside the tap until its first await: iPhone only allows the motion prompt and wake lock from a tap.
+  async function runCheck() {
+    const facts = Caps.facts;
+    Object.assign(facts, { motionPermission: undefined, motionError: undefined, motion: undefined, audioRunning: undefined, wakeLock: undefined, heard: undefined });
+    Caps.readStatic();
+    // No point asking for motion access that cannot work.
+    if (Caps.blocked()) { Caps.stage = 'done'; renderCheck(); return; }
+
+    Sound.init();
+    speak('Checking your phone.');
+    let ask;
+    try {
+      ask = typeof DeviceMotionEvent.requestPermission === 'function' ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted');
+    } catch (e) { ask = Promise.reject(e); }
+    const wake = keepAwake();
+    Caps.stage = 'checking';
+    renderCheck();
+
+    let granted = false;
+    try {
+      granted = await ask === 'granted';
+      facts.motionPermission = granted ? 'granted' : 'denied';
+    } catch (e) {
+      facts.motionPermission = 'error';
+      facts.motionError = String(e && e.message || e);
+    }
+    if (granted) {
+      const { readings, hidden } = await probeMotion();
+      if (hidden) { // Leaving the page stops the readings, which says nothing about the sensor.
+        releaseAwake();
+        Caps.stage = 'idle';
+        renderCheck();
+        return;
+      }
+      facts.motion = Core.assessMotion(readings);
+    }
+    facts.wakeLock = await wake;
+    releaseAwake(); // the session takes it again when it starts
+    if (facts.speech && !facts.voices) facts.voices = speechSynthesis.getVoices().length;
+    // Safari interrupts audio while speech plays and it recovers afterwards, so only a plain stop counts.
+    const state = Sound.ctx?.state;
+    if (state) facts.audioRunning = (state !== 'suspended' && state !== 'closed') || window.speechSynthesis?.speaking === true;
+    Caps.stage = 'done';
+    renderCheck();
+    if (!Caps.blocked() && Caps.canPlay()) playTestSound();
+  }
+
+  function leaveCheck(demoOnly) {
+    Caps.demoOnly = demoOnly;
+    $('demoOnly').hidden = !demoOnly;
+    $('start').hidden = demoOnly;
+    show('intro');
+  }
+
   // ---------- Buttons ----------
   function begin(demo) {
     hideError();
@@ -1169,40 +1514,24 @@ if (typeof module !== 'undefined') module.exports = Core;
     S.samples = 0; S.latest = null; smP.reset(); smR.reset();
     // Demo mode skips calibration: its simulated chest has a known range.
     if (demo) { startDemo(); S.cal = Core.demoCalibration(); startSession(true); return; }
-
-    if (!window.isSecureContext) {
-      showError('<strong>This page must be opened over <code>https://</code>.</strong> iPhone only gives motion data to secure pages. Use the https link from <code>serve.sh</code>.');
-      return;
-    }
-    if (typeof DeviceMotionEvent === 'undefined') {
-      showError('<strong>This browser has no motion sensor access.</strong> Open the page on your iPhone, or use demo mode to try it here.');
-      return;
-    }
-    const ask = typeof DeviceMotionEvent.requestPermission === 'function'
-      ? DeviceMotionEvent.requestPermission()
-      : Promise.resolve('granted');
-    ask.then(state => {
-      if (state !== 'granted') {
-        showError('<strong>Motion access was not allowed.</strong> Close this tab, open the link again, tap Start and choose <em>Allow</em>.');
-        return;
-      }
-      window.removeEventListener('devicemotion', onMotion);
-      window.addEventListener('devicemotion', onMotion);
-      startSession(false);
-    }).catch(err => {
-      showError(`<strong>Could not turn on the motion sensor.</strong> ${String(err && err.message || err)}`);
-    });
+    window.removeEventListener('devicemotion', onMotion);
+    window.addEventListener('devicemotion', onMotion);
+    startSession(false);
   }
 
   // A tap during a session also restarts audio iOS stopped.
   document.addEventListener('pointerdown', () => { if (S.running) Sound.wake(); });
   $('start').addEventListener('click', () => begin(false));
   $('demo').addEventListener('click', () => begin(true));
-  $('testSound').addEventListener('click', () => {
-    Sound.init();
-    Sound.chime();
-    speak('This is how the coach sounds. If you cannot hear this, turn the ringer on and the volume up.');
-  });
+  $('runCheck').addEventListener('click', runCheck);
+  $('checkAgain').addEventListener('click', () => { stopTestSound(); runCheck(); });
+  $('checkContinue').addEventListener('click', () => leaveCheck(false));
+  $('checkDemo').addEventListener('click', () => leaveCheck(true));
+  $('backToCheck').addEventListener('click', () => { Caps.stage = 'idle'; renderCheck(); show('check'); });
+  $('soundAgain').addEventListener('click', () => { stopTestSound(); playTestSound(); });
+  for (const [id, heard] of [['heardYes', true], ['heardNo', false]]) {
+    $(id).addEventListener('click', () => { stopTestSound(); Caps.facts.heard = heard; renderCheck(); });
+  }
   $('stop').addEventListener('click', () => {
     if (S.results.length) finishSession();
     else {
@@ -1235,6 +1564,9 @@ if (typeof module !== 'undefined') module.exports = Core;
 
   bindSettings();
   renderHistory();
+  Caps.readStatic();
+  Caps.watchVoices();
+  renderCheck();
 })();
 </script>
 </body>
