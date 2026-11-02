@@ -103,6 +103,7 @@ th { color: var(--ink2); font-weight: 600; font-size: 0.85rem; }
 .facts { display: flex; flex-direction: column; gap: 8px; color: var(--ink2); }
 .facts b { color: var(--ink); font-weight: 600; }
 footer { color: var(--muted); font-size: 0.85rem; }
+footer p { margin: 0 0 4px; }
 
 @media (max-width: 680px) {
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -188,7 +189,10 @@ footer { color: var(--muted); font-size: 0.85rem; }
     <div class="chart" id="rawChart"></div>
   </section>
 
-  <footer id="footer"></footer>
+  <footer>
+    <p id="footer"></p>
+    <p>&copy; 2026 Amrut Joshi. All rights reserved.</p>
+  </footer>
 </div>
 
 <script id="data" type="application/json">/*__DATA__*/null</script>
