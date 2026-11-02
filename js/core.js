@@ -171,19 +171,19 @@ const Core = (() => {
     }
 
     if (f.audio === false) {
-      add('audio', 'warn', 'audio', 'The tone and beeps cannot play', 'This browser has no Web Audio, so you will not hear when you are above or below the line. Update your phone or use its main browser.');
+      add('audio', 'warn', 'sound', 'The tone and beeps cannot play', 'This browser has no Web Audio, so you will not hear when you are above or below the line. Update your phone or use its main browser.');
     } else if (f.audioRunning === false) {
-      add('audio-stopped', 'warn', 'audio', 'The tone and beeps may not play', 'The browser did not start audio. Close other apps that are playing sound and check again.');
+      add('audio-stopped', 'warn', 'sound', 'The tone and beeps may not play', 'The browser did not start audio. Close other apps that are playing sound and check again.');
     }
     // Hearing the sound settles what the page cannot measure itself.
     if (f.heard === false) {
-      add('unheard', 'warn', 'hearing', 'You did not hear the coach', 'Turn the ringer on and the volume up, then tap Play again. The coach gives its feedback by sound.');
+      add('unheard', 'warn', 'sound', 'You did not hear the coach', 'Turn the ringer on and the volume up, then tap Play again. The coach gives its feedback by sound.');
     } else if (f.ringerMatters && f.heard !== true) {
-      add('ringer', 'warn', 'hearing', 'Silent mode can mute the coach', 'On this iOS version web pages cannot play through silent mode. Turn the ringer on and the volume up.');
+      add('ringer', 'warn', 'sound', 'Silent mode can mute the coach', 'On this iOS version web pages cannot play through silent mode. Turn the ringer on and the volume up.');
     }
     if (f.voiceOn) {
-      if (f.speech === false) add('speech', 'warn', 'speech', 'Spoken cues are not available', 'You will hear tones but no voice prompts or countdown.');
-      else if (f.voices === 0 && f.heard !== true) add('voices', 'warn', 'speech', 'Spoken cues may not play', 'No voices are installed for this browser, so you may hear tones but no voice prompts or countdown.');
+      if (f.speech === false) add('speech', 'warn', 'sound', 'Spoken cues are not available', 'You will hear tones but no voice prompts or countdown.');
+      else if (f.voices === 0 && f.heard !== true) add('voices', 'warn', 'sound', 'Spoken cues may not play', 'No voices are installed for this browser, so you may hear tones but no voice prompts or countdown.');
     }
 
     if (f.wakeLock === 'unsupported' || f.wakeLock === 'denied') {
@@ -194,7 +194,8 @@ const Core = (() => {
   }
 
   // One row per check for the phone check screen. status: pending, pass, warn or block.
-  // A row passes only once something was tested; sound counts only when the person says they heard it.
+  // A row passes only once something was tested; sound counts only when the person says they heard it,
+  // which covers the tone, the beeps and the voice in one answer.
   function capabilityRows(f) {
     const issues = assessCapabilities(f);
     const row = (id, label, checked, note) => {
@@ -204,10 +205,8 @@ const Core = (() => {
     };
     return [
       row('secure', 'Secure connection', f.secure === true),
-      row('motion', 'Motion sensor', !!f.motion && f.motion.usable, f.motion && `about ${f.motion.hz} readings a second`),
-      row('audio', 'Tone and beeps', f.audioRunning === true && f.heard === true),
-      row('hearing', 'You can hear the coach', f.heard === true),
-      row('speech', 'Spoken cues', f.voiceOn !== false && f.heard === true, f.voiceOn === false ? 'turned off' : undefined),
+      row('motion', 'Motion sensor', !!f.motion && f.motion.usable, f.motion && `${f.motion.hz} readings/s`),
+      row('sound', 'Sound', f.heard === true),
       row('wake', 'Screen stays awake', f.wakeLock === 'ok'),
       row('storage', 'Saved results', f.storage === true),
     ];

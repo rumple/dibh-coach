@@ -44,7 +44,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body, main { height: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -54,20 +54,25 @@ body {
 }
 [hidden] { display: none !important; }
 
+/* Every screen fits the phone: a header, a middle (.scroll) that scrolls only when it must, and pinned buttons (.dock). */
 .wrap {
   max-width: 560px;
   margin: 0 auto;
-  min-height: 100%;
-  padding-block: max(20px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+  height: 100%;
+  height: 100dvh;
+  padding-block: max(14px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-bottom, 0px));
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
+.scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.scroll > * { flex: none; } /* scroll rather than squash, which would clip what is inside */
+.dock { flex: none; display: flex; flex-direction: column; gap: 8px; }
 
 h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; line-height: 1.15; }
-h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.01em; }
+h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; }
 h2 { font-size: 1.15rem; font-weight: 700; }
 p { margin: 0; }
 .lede { color: var(--muted); max-width: 34em; }
@@ -80,21 +85,29 @@ p { margin: 0; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 16px;
-  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 
 ol.steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; }
 ol.steps li::marker { color: var(--accent); font-weight: 700; }
+#ready .scroll { gap: 8px; }
+#ready ol.steps { gap: 4px; font-size: 0.95rem; line-height: 1.35; }
+#ready .note { font-size: 0.85rem; line-height: 1.35; }
 
-.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.phase { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
-.phase-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.phase-head h3 { font-size: 1rem; }
-.phase-head button { padding: 4px 0; font-size: 0.9rem; }
-.phase .fields { grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.phase-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.phase-foot button { padding: 8px 14px; font-size: 0.95rem; }
+.phase-grid { display: grid; grid-template-columns: 44px repeat(3, minmax(0, 1fr)) 26px; gap: 6px; align-items: center; }
+.phase-head { font-size: 0.8rem; color: var(--muted); }
+.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.phase-n { color: var(--muted); font-family: var(--font-mono); text-align: center; }
+.phase select { padding: 7px 4px; }
+.phase button { padding: 0; border: none; background: none; color: var(--muted); font-size: 1.2rem; min-height: 36px; }
+.phase-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.phase-foot button { padding: 7px 12px; font-size: 0.9rem; white-space: nowrap; flex: none; }
+.phase-foot .note { text-align: right; }
+#demoOnly:not([hidden]) ~ .scroll #holdTip { display: none; }
+#demoOnly { padding: 8px 12px; }
+#demoOnly button { padding: 2px 0; }
+.toggles { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -123,7 +136,7 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-button.big { padding: 16px 28px; font-size: 1.1rem; flex: 1 1 auto; }
+button.big { padding: 13px 24px; font-size: 1.05rem; flex: 1 1 auto; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: 0.6; cursor: default; }
 button.link { background: none; border: none; padding: 6px 0; color: var(--accent); text-decoration: underline; }
@@ -136,17 +149,17 @@ button.link { background: none; border: none; padding: 6px 0; color: var(--accen
 }
 .error strong { color: var(--off); }
 
-.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.check-row { display: grid; grid-template-columns: 1.6em 1fr; gap: 2px 8px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.checks { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.check-row { display: grid; grid-template-columns: 1.4em 1fr; gap: 2px 6px; padding: 6px 12px; border-top: 1px solid var(--line); }
+.check-row:first-child { border-top: none; }
 .check-row .mark { font-weight: 700; color: var(--muted); }
 .check-row.pass .mark { color: var(--on); }
-.check-row.warn, .check-row.block { border-color: var(--off); }
 .check-row.warn .mark, .check-row.block .mark, .check-row.block .check-label { color: var(--off); }
-.check-row.block { background: color-mix(in srgb, var(--off) 10%, var(--surface)); }
+.check-row.block, .check-row.warn { background: color-mix(in srgb, var(--off) 10%, var(--surface)); }
 .check-label { font-weight: 700; }
 .check-row.pending .check-label { font-weight: 400; color: var(--muted); }
 .check-note { font-weight: 400; color: var(--muted); font-size: 0.9rem; }
-.check-row p { grid-column: 2; font-size: 0.9rem; }
+.check-row p { grid-column: 2; font-size: 0.9rem; line-height: 1.35; }
 .check-row p strong { display: block; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -160,8 +173,6 @@ button.link { background: none; border: none; padding: 6px 0; color: var(--accen
 .history .when { color: var(--muted); }
 
 /* Session */
-#session { height: 100%; }
-#session .wrap { height: 100%; gap: 12px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .chip {
   font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
@@ -177,31 +188,30 @@ button.link { background: none; border: none; padding: 6px 0; color: var(--accen
 }
 .gate.on { background: var(--on); color: var(--surface); }
 .gate.off { background: var(--off); color: var(--surface); }
-.chart-box { flex: 1 1 auto; min-height: 220px; position: relative; }
+.chart-box { flex: 1 1 auto; min-height: 150px; position: relative; }
 #chart {
   position: absolute; inset: 0; width: 100%; height: 100%;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
 }
 .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .level { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
-#demoBtn { width: 100%; padding: 18px; user-select: none; -webkit-user-select: none; touch-action: none; }
+#demoBtn { width: 100%; flex: none; padding: 14px; user-select: none; -webkit-user-select: none; touch-action: none; }
 #demoBtn.held { background: var(--on); color: var(--surface); border-color: var(--on); }
 
 /* Summary */
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-width: 0; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; min-width: 0; }
 .stat .v { font-family: var(--font-mono); font-size: 1.5rem; font-variant-numeric: tabular-nums; }
 .stat .k { font-size: 0.8rem; color: var(--muted); }
 .table-box { overflow-x: auto; }
+thead th { position: sticky; top: 0; background: var(--surface); }
+.dock .row { display: flex; gap: 8px; }
+.dock .row button { flex: 1 1 0; padding: 10px 8px; font-size: 0.95rem; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
 th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
 
-@media (max-width: 380px) {
-  .fields { grid-template-columns: 1fr; }
-  .stats { grid-template-columns: 1fr 1fr; }
-}
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -220,93 +230,119 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       <p class="eyebrow">Breath Hold Coach</p>
       <h1>Check your phone</h1>
     </div>
-    <p class="lede">The coach needs your phone’s motion sensor and sound. This takes a few seconds. If asked about motion access, tap Allow.</p>
-    <ul class="checks" id="checkRows" aria-live="polite"></ul>
-    <section class="panel" id="soundStep" hidden>
-      <h2>Did you hear all of that?</h2>
-      <p class="note" id="soundHint"></p>
-      <div class="actions">
-        <button id="heardYes">Yes</button>
-        <button id="heardNo">No</button>
-        <button id="soundAgain">Play again</button>
-      </div>
-    </section>
-    <div class="actions">
+    <p class="lede" id="checkLede">Practise the deep breath hold used in breast radiotherapy. First, check your phone can do it. Allow motion access if asked.</p>
+    <div class="scroll">
+      <ul class="checks" id="checkRows" aria-live="polite"></ul>
+    </div>
+    <div class="dock">
+      <section class="panel" id="soundStep" hidden>
+        <h2 id="soundTitle">Did you hear all of that?</h2>
+        <p class="note" id="soundHint"></p>
+        <div class="row">
+          <button id="heardYes">Yes</button>
+          <button id="heardNo">No</button>
+          <button id="soundAgain">Play again</button>
+        </div>
+      </section>
       <button id="runCheck" class="primary big" disabled>Check my phone</button>
       <button id="checkContinue" class="primary big" hidden>Continue</button>
-      <button id="checkAgain" hidden>Check again</button>
+      <div class="row">
+        <button id="checkAgain" hidden>Check again</button>
+        <button id="checkDemo" hidden>Use demo mode</button>
+      </div>
     </div>
-    <button id="checkDemo" class="link" hidden>Use demo mode</button>
   </div>
 </main>
 
-<!-- Start screen -->
+<!-- Setup screen -->
 <main id="intro" hidden>
   <div class="wrap">
     <div>
-      <p class="eyebrow">Deep inspiration breath hold</p>
-      <h1>Breath Hold Coach</h1>
+      <p class="eyebrow">Breath Hold Coach</p>
+      <h1>Your session</h1>
     </div>
-    <p class="lede">Practise the deep breath hold used in breast radiotherapy. Your phone rests on your chest, measures how high your breath lifts it, and tells you by sound whether you are holding above the line.</p>
-
-    <div id="error" class="error" hidden role="alert"></div>
-
     <div id="demoOnly" class="error" hidden>
-      <strong>Demo mode only.</strong> This phone did not pass the check, so real sessions are off.
+      <strong>Demo mode only.</strong> This phone did not pass the check.
       <button id="backToCheck" class="link">Back to phone check</button>
     </div>
-
-    <section class="panel">
-      <h2>Before you start</h2>
-      <ol class="steps">
-        <li>Turn the ringer on (silent switch off) and turn the volume up.</li>
-        <li>Lie on your back, arms where your treatment team positions them.</li>
-        <li>Place the phone screen up, flat on the lower part of your breastbone, top edge towards your chin.</li>
-        <li>Breathe into your chest, not your belly, unless your team told you otherwise.</li>
-      </ol>
-      <p class="note">The app first checks the signal, then asks for one minute of calm breathing and three deep breaths to learn your range. Practice starts on its own after that.</p>
-    </section>
-
-    <section class="panel">
-      <h2>Session</h2>
-      <ol class="phases" id="phases"></ol>
-      <div class="phase-foot">
-        <button id="addPhase">Add phase</button>
-        <span class="note" id="planTotal"></span>
-      </div>
-      <div class="fields">
-        <div class="field full">
-          <span class="label">Feedback</span>
-          <label class="check"><input type="checkbox" id="voice"> Spoken cues</label>
-          <label class="check"><input type="checkbox" id="tone"> Tone above line</label>
+    <div class="scroll">
+      <section class="panel">
+        <div class="phase-grid phase-head" aria-hidden="true"><span>Phase</span><span>Holds</span><span>Hold</span><span>Rest</span></div>
+        <ol class="phases" id="phases"></ol>
+        <div class="phase-foot">
+          <button id="addPhase">Add phase</button>
+          <span class="note" id="planTotal"></span>
         </div>
-        <div class="field full">
+      </section>
+      <section class="panel">
+        <div class="field">
           <label for="target">Target line (share of your deepest breath)</label>
           <div class="range-row">
             <input type="range" id="target" min="50" max="90" step="5">
             <output id="targetOut" for="target"></output>
           </div>
         </div>
-      </div>
-      <p class="note">Each phase repeats its hold and rest the set number of times, then the next phase starts. Use phases to build up, for example 2 × 15 s, then 2 × 20 s. Most treatment holds are 20 to 25 seconds.</p>
-    </section>
-
-    <div class="actions">
-      <button id="start" class="primary big">Start</button>
+        <div class="toggles">
+          <label class="check"><input type="checkbox" id="voice"> Spoken cues</label>
+          <label class="check"><input type="checkbox" id="tone"> Tone above line</label>
+        </div>
+      </section>
+      <p class="note" id="holdTip">Most treatment holds are 20 to 25 seconds.</p>
     </div>
-    <button id="demo" class="link">Try it without the sensor (demo mode)</button>
-    <label class="check note"><input type="checkbox" id="autoBreathe"> Demo breathes in by itself during holds (hands-free sound test)</label>
+    <div class="dock">
+      <button id="openMore" class="link">History &amp; demo ›</button>
+      <button id="next" class="primary big">Next</button>
+      <button id="demoStart" class="primary big" hidden>Start demo</button>
+    </div>
+  </div>
+</main>
 
-    <section class="panel" id="historyPanel" hidden>
-      <h2>Recent sessions</h2>
-      <ul class="history" id="history"></ul>
-      <div class="actions">
+<!-- Get ready: shown just before lying down -->
+<main id="ready" hidden>
+  <div class="wrap">
+    <h1>Get ready</h1>
+    <div id="error" class="error" hidden role="alert"></div>
+    <div class="scroll">
+      <ol class="steps">
+        <li>Turn the ringer on and the volume up.</li>
+        <li>Lie on your back, arms where your treatment team positions them.</li>
+        <li>Place the phone screen up, flat on the lower part of your breastbone, top edge towards your chin.</li>
+        <li>Breathe into your chest, not your belly, unless your team told you otherwise.</li>
+      </ol>
+      <p class="note">First a signal check, then about a minute of calm and deep breaths to learn your range. Practice starts on its own after that.</p>
+      <p class="note"><strong>Practice only.</strong> This app does not connect to or match any treatment machine, and its percentages are not your clinical threshold. Stop and breathe normally if you feel dizzy or short of breath. Check with your treatment team before practising if you have heart or lung problems.</p>
+    </div>
+    <div class="dock">
+      <button id="start" class="primary big">Start</button>
+      <button id="readyBack" class="link">Back</button>
+    </div>
+  </div>
+</main>
+
+<!-- History and demo -->
+<main id="more" hidden>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Breath Hold Coach</p>
+      <h1>History &amp; demo</h1>
+    </div>
+    <div class="scroll">
+      <section class="panel" id="historyPanel" hidden>
+        <h2>Recent sessions</h2>
+        <ul class="history" id="history"></ul>
         <button id="exportAll">Export detailed logs</button>
-      </div>
-      <p class="note" id="exportAllNote">Detailed logs of the last 10 sessions are kept on this phone.</p>
-    </section>
-
-    <p class="note"><strong>Practice only.</strong> This app does not connect to or match any treatment machine, and its percentages are not your clinical threshold. Stop and breathe normally if you feel dizzy or short of breath. Check with your treatment team before practising if you have heart or lung problems.</p>
+        <p class="note" id="exportAllNote">Detailed logs of the last 10 sessions are kept on this phone.</p>
+      </section>
+      <section class="panel">
+        <h2>Demo mode</h2>
+        <button id="demo">Try it without the sensor</button>
+        <label class="check note"><input type="checkbox" id="autoBreathe"> Demo breathes in by itself during holds (hands-free sound test)</label>
+      </section>
+      <p class="note">Your phone rests on your chest, measures how high your breath lifts it, and tells you by sound whether you are holding above the line.</p>
+    </div>
+    <div class="dock">
+      <button id="moreBack" class="primary big">Back</button>
+    </div>
   </div>
 </main>
 
@@ -343,21 +379,23 @@ th { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
       <div class="stat"><div class="v" id="sHolds">–</div><div class="k">holds done</div></div>
       <div class="stat"><div class="v" id="sWobble">–</div><div class="k">average wobble</div></div>
     </div>
-    <section class="panel">
-      <h2>Each hold</h2>
+    <div class="scroll">
       <div class="table-box">
         <table>
           <thead><tr><th>Hold</th><th id="phaseCol">Phase</th><th>Length</th><th>Above line</th><th>Avg level</th><th>Wobble</th><th>Drops</th></tr></thead>
           <tbody id="sumRows"></tbody>
         </table>
       </div>
-      <p class="note">Above line is the share of the hold your breath stayed over the target, which is when the treatment beam would run. Wobble is how much your breath level moved during the hold; lower is steadier. Drops counts the times you fell below the line.</p>
-    </section>
-    <p class="note" id="logStatus" aria-live="polite"></p>
-    <div class="actions">
+      <button id="explainBtn" class="link">What do these mean?</button>
+      <p class="note" id="explain" hidden>Above line is the share of the hold your breath stayed over the target, which is when the treatment beam would run. Wobble is how much your breath level moved during the hold; lower is steadier. Drops counts the times you fell below the line.</p>
+    </div>
+    <div class="dock">
+      <p class="note" id="logStatus" aria-live="polite"></p>
       <button id="again" class="primary big">Practise again</button>
-      <button id="export">Export log</button>
-      <button id="home">Back to start</button>
+      <div class="row">
+        <button id="export">Export log</button>
+        <button id="home">Back to setup</button>
+      </div>
     </div>
   </div>
 </main>

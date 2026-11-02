@@ -82,13 +82,21 @@ function renderCheck() {
   const askSound = done && !blocked && Caps.canPlay();
   const mustAnswer = askSound && heard === undefined;
   $('soundStep').hidden = !askSound || heard === true;
+  // After a No the row above explains the fix, so the question shrinks to make room for it.
+  const retrying = heard === false;
+  $('soundTitle').hidden = retrying;
+  $('soundHint').hidden = retrying;
+  $('heardNo').hidden = retrying;
+  $('heardYes').textContent = retrying ? 'I heard it now' : 'Yes';
+  $('checkLede').hidden = Caps.stage !== 'idle';
+  $('checkRows').querySelector('.block, .warn')?.scrollIntoView({ block: 'nearest' });
   const parts = [];
   if (Caps.facts.audio) {
     if (settings.tone) parts.push('a steady tone');
     parts.push('two beeps');
   }
   if (Caps.facts.speech && settings.voice) parts.push('a voice');
-  $('soundHint').textContent = `You should hear ${parts.join(', then ')}. Leave the phone face up, as it will be on your chest.`;
+  $('soundHint').textContent = `You should hear ${parts.join(', then ')}.`;
   $('runCheck').hidden = done || (blocked && Caps.stage === 'idle');
   $('runCheck').disabled = Caps.stage === 'checking';
   $('runCheck').textContent = Caps.stage === 'checking' ? 'Checking your phone…' : 'Check my phone';
@@ -200,7 +208,8 @@ async function runCheck() {
 function leaveCheck(demoOnly) {
   Caps.demoOnly = demoOnly;
   $('demoOnly').hidden = !demoOnly;
-  $('start').hidden = demoOnly;
+  $('next').hidden = demoOnly;
+  $('demoStart').hidden = !demoOnly;
   show('intro');
 }
 

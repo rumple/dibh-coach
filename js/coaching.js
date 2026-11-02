@@ -401,6 +401,8 @@ function begin(demo) {
 document.addEventListener('pointerdown', () => { if (S.running) Sound.wake(); });
 $('start').addEventListener('click', () => begin(false));
 $('demo').addEventListener('click', () => begin(true));
+$('demoStart').addEventListener('click', () => begin(true));
+$('explainBtn').addEventListener('click', () => { $('explain').hidden = !$('explain').hidden; });
 $('stop').addEventListener('click', () => {
   if (S.results.length) finishSession();
   else {

@@ -162,12 +162,12 @@ test('poor sensor quality warns but does not block', () => {
 
 test('sound, screen and storage problems warn', () => {
   for (const [fact, id, row] of [
-    [{ audio: false }, 'audio', 'audio'],
-    [{ audioRunning: false }, 'audio-stopped', 'audio'],
-    [{ heard: false }, 'unheard', 'hearing'],
-    [{ heard: undefined, ringerMatters: true }, 'ringer', 'hearing'],
-    [{ speech: false }, 'speech', 'speech'],
-    [{ heard: undefined, voices: 0 }, 'voices', 'speech'],
+    [{ audio: false }, 'audio', 'sound'],
+    [{ audioRunning: false }, 'audio-stopped', 'sound'],
+    [{ heard: false }, 'unheard', 'sound'],
+    [{ heard: undefined, ringerMatters: true }, 'ringer', 'sound'],
+    [{ speech: false }, 'speech', 'sound'],
+    [{ heard: undefined, voices: 0 }, 'voices', 'sound'],
     [{ wakeLock: 'unsupported' }, 'wake-lock', 'wake'],
     [{ wakeLock: 'denied' }, 'wake-lock', 'wake'],
     [{ storage: false }, 'storage', 'storage'],
@@ -200,29 +200,25 @@ test('capability rows show the worst problem on the right row', () => {
   const r = rowStatus({ ...healthy, secure: false, wakeLock: 'denied' });
   assert.equal(r.secure, 'block');
   assert.equal(r.wake, 'warn');
-  assert.equal(r.audio, 'pass');
+  assert.equal(r.sound, 'pass');
   const motion = Core.capabilityRows({ ...healthy, motion: Core.assessMotion([]) }).find(x => x.id === 'motion');
   assert.equal(motion.status, 'block');
   assert.equal(motion.issues[0].id, 'motion-none');
 });
 
-test('sound rows pass only after the person says they heard it', () => {
-  const before = rowStatus({ ...healthy, heard: undefined });
-  assert.equal(before.audio, 'pending');
-  assert.equal(before.speech, 'pending');
-  const no = rowStatus({ ...healthy, heard: false });
-  assert.equal(no.audio, 'pending');
-  assert.equal(no.speech, 'pending');
-  assert.equal(no.hearing, 'warn');
-  const yes = rowStatus(healthy);
-  assert.equal(yes.audio, 'pass');
-  assert.equal(yes.speech, 'pass');
+test('the sound row passes only after the person says they heard it', () => {
+  assert.equal(rowStatus({ ...healthy, heard: undefined }).sound, 'pending');
+  assert.equal(rowStatus({ ...healthy, heard: false }).sound, 'warn');
+  assert.equal(rowStatus(healthy).sound, 'pass');
+  assert.deepEqual(plain(Core.capabilityRows(healthy).map(r => r.id)), ['secure', 'motion', 'sound', 'wake', 'storage']);
 });
 
-test('capability rows report the sensor rate and spoken cues turned off', () => {
-  const rows = Core.capabilityRows({ ...healthy, voiceOn: false, speech: false });
-  assert.equal(rows.find(x => x.id === 'motion').note, 'about 60 readings a second');
-  const speech = rows.find(x => x.id === 'speech');
-  assert.equal(speech.status, 'pending');
-  assert.equal(speech.note, 'turned off');
+test('capability rows report the sensor rate', () => {
+  assert.equal(Core.capabilityRows(healthy).find(x => x.id === 'motion').note, '60 readings/s');
+});
+
+test('turning spoken cues off removes speech problems from the sound row', () => {
+  const sound = Core.capabilityRows({ ...healthy, voiceOn: false, speech: false }).find(x => x.id === 'sound');
+  assert.equal(sound.status, 'pass');
+  assert.deepEqual(plain(sound.issues), []);
 });

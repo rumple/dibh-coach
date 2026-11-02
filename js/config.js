@@ -1,5 +1,5 @@
-// The setup screen: phases, target and feedback settings, recent sessions and log export.
-import { $, SETTINGS_KEY, load, save, settings, LOGS_KEY, exportLogs } from './shared.js';
+// The setup screen (phases, target, feedback), the history screen and the moves between them.
+import { $, SETTINGS_KEY, load, save, settings, LOGS_KEY, exportLogs, show } from './shared.js';
 
 export const HISTORY_KEY = 'dibh-coach.history';
 
@@ -15,42 +15,32 @@ function renderPhases() {
   ol.textContent = '';
   settings.phases.forEach((ph, i) => {
     const li = document.createElement('li');
-    li.className = 'phase';
-    const head = document.createElement('div');
-    head.className = 'phase-head';
-    const h = document.createElement('h3');
-    h.textContent = `Phase ${i + 1}`;
-    head.append(h);
-    if (settings.phases.length > 1) {
-      const rm = document.createElement('button');
-      rm.className = 'link';
-      rm.textContent = 'Remove';
-      rm.setAttribute('aria-label', `Remove phase ${i + 1}`);
-      rm.addEventListener('click', () => { settings.phases.splice(i, 1); phasesChanged(); });
-      head.append(rm);
-    }
-    const fields = document.createElement('div');
-    fields.className = 'fields';
+    li.className = 'phase phase-grid';
+    const n = document.createElement('span');
+    n.className = 'phase-n';
+    n.textContent = String(i + 1);
+    li.append(n);
     for (const k of ['holds', 'holdSec', 'restSec']) {
-      const field = document.createElement('div');
-      field.className = 'field';
-      const id = `phase${i}-${k}`;
-      const label = document.createElement('label');
-      label.htmlFor = id;
-      label.textContent = PHASE_LABELS[k];
       const sel = document.createElement('select');
-      sel.id = id;
+      sel.id = `phase${i}-${k}`;
+      sel.setAttribute('aria-label', `Phase ${i + 1} ${PHASE_LABELS[k]}`);
       const opts = [...new Set([...PHASE_OPTIONS[k], ph[k]])].sort((a, b) => a - b);
       for (const v of opts) sel.add(new Option(k === 'holds' ? String(v) : `${v} s`, String(v)));
       sel.value = String(ph[k]);
       sel.addEventListener('change', () => { ph[k] = Number(sel.value); phasesChanged(false); });
-      field.append(label, sel);
-      fields.append(field);
+      li.append(sel);
     }
-    li.append(head, fields);
+    if (settings.phases.length > 1) {
+      const rm = document.createElement('button');
+      rm.textContent = '✕';
+      rm.setAttribute('aria-label', `Remove phase ${i + 1}`);
+      rm.addEventListener('click', () => { settings.phases.splice(i, 1); phasesChanged(); });
+      li.append(rm);
+    }
     ol.append(li);
   });
   $('addPhase').hidden = settings.phases.length >= Core.MAX_PHASES;
+  $('holdTip').hidden = settings.phases.length > 1; // room for more phases on small phones
   renderPlanTotal();
 }
 
@@ -108,6 +98,11 @@ $('exportAll').addEventListener('click', async () => {
   if (r === 'empty') $('exportAllNote').textContent = 'No detailed logs on this phone yet.';
   else if (r === 'downloaded') $('exportAllNote').textContent = `Downloaded ${logs.length} session logs.`;
 });
+
+$('next').addEventListener('click', () => show('ready'));
+$('readyBack').addEventListener('click', () => show('intro'));
+$('openMore').addEventListener('click', () => show('more'));
+$('moreBack').addEventListener('click', () => show('intro'));
 
 bindSettings();
 renderHistory();

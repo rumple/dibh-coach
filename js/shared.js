@@ -223,8 +223,8 @@ export async function exportLogs(recs, baseName) {
 
 // ---------- Screens ----------
 export function show(id) {
-  for (const s of ['check', 'intro', 'session', 'summary']) $(s).hidden = s !== id;
+  for (const s of ['check', 'intro', 'ready', 'more', 'session', 'summary']) $(s).hidden = s !== id;
   window.scrollTo(0, 0);
 }
-export function showError(html) { $('error').innerHTML = html; $('error').hidden = false; show('intro'); }
+export function showError(html) { $('error').innerHTML = html; $('error').hidden = false; show('ready'); }
 export function hideError() { $('error').hidden = true; }

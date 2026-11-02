@@ -8,6 +8,11 @@ breath is above the target line ("beam on"), double beeps when it drops below ("
 **Practice only.** It does not connect to or match any treatment machine, and its percentages are not a
 clinical threshold.
 
+## Screens
+
+Check your phone → setup → Get ready → session → summary, with **History & demo** reached from setup. Each screen
+fits the phone: its main button is pinned to the bottom, and only a long list scrolls, never the page.
+
 ## How it works
 
 1. **Signal check** (4 s): confirms motion data is arriving.
@@ -27,7 +32,7 @@ scripts are in `js/`:
 | File | Contents |
 |---|---|
 | `phone-check.js` | The first screen: sensor test, sound test, gating setup |
-| `config.js` | The setup screen: phases, settings, recent sessions, log export |
+| `config.js` | The setup and history screens: phases, settings, recent sessions, log export |
 | `coaching.js` | The live session and summary. Also the entry point, which imports the others |
 | `demo.js` | Demo mode's simulated chest |
 | `shared.js` | Stored settings, sound and voice, wake lock, session logs, screens |
@@ -56,10 +61,10 @@ iPhone, so **Check my phone** runs it (up to 3 s). It runs once per page load; r
 
 - **All passed:** **Continue** opens setup.
 - **Warnings:** each shows its fix, and **Continue anyway** opens setup.
-- **Blocked:** **Check again**, or **Use demo mode**, which opens setup with the real **Start** hidden.
+- **Blocked:** **Check again**, or **Use demo mode**, which opens setup with **Start demo** in place of **Next**.
 
 A row only gets a tick once it has been tested. Web pages can't see the silent switch or the volume, which is
-why the check asks: **Tone and beeps** and **Spoken cues** stay unticked until you answer **Yes**, which also clears
+why the check asks: the **Sound** row stays unticked until you answer **Yes**, which also clears
 the silent mode and missing voice warnings. A notice in the page stays visible if the browser is too old to run
 the app's script. Session logs record the results under `capabilities`, including the measured sensor rate.
 
@@ -76,7 +81,7 @@ Every session (completed, stopped early, or failed calibration) produces a detai
 - phase events, and a 10 Hz trace: `t_s, pitch_deg, roll_deg, level_pct, beam_on, phase`
 
 Logs stay on the phone (the last 10 records, in Safari's local storage) and leave it only when you
-share them: **Export log** on the summary screen, or **Export detailed logs** on the start screen, opens the
+share them: **Export log** on the summary screen, or **Export detailed logs** on **History & demo**, opens the
 share sheet (Files, AirDrop, WhatsApp, Mail…) with a `.json` and a `.csv` file. Nothing is uploaded
 automatically.
 
@@ -106,7 +111,7 @@ iPhone Safari only gives motion data to `https://` pages, so run:
 ```
 
 Open the printed `https://…` link in Safari on the iPhone, tap **Check my phone**, **Allow** motion access,
-answer the sound question, then tap **Continue** and **Start**. Press Ctrl-C to stop the tunnel.
+answer the sound question, then tap **Continue**, **Next** and **Start**. Press Ctrl-C to stop the tunnel.
 
 On a laptop, open `http://localhost:8000`, tap **Check my phone**, then **Use demo mode** (no sensor, so the
 check blocks real sessions), and start demo mode (hold the on-screen button to "breathe in").
