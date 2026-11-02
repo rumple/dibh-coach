@@ -1,6 +1,6 @@
 // The live session: sensor input, the hold sequence, the chart and the summary.
 // This is the app's entry point: importing the other parts starts them. Core is the global from core.js.
-import { $, load, save, settings, Sound, speak, keepAwake, releaseAwake, Rec, calInfo, r1, r2, exportLogs, show, showError, hideError } from './shared.js';
+import { $, load, save, settings, Sound, speak, keepAwake, releaseAwake, Rec, calInfo, r1, r2, exportLogs, show, showError, hideError, track } from './shared.js';
 import { HISTORY_KEY, renderHistory } from './config.js';
 import { capabilitySnapshot } from './phone-check.js';
 import { startDemo, stopDemo } from './demo.js';
@@ -93,6 +93,7 @@ function stopSession() {
 }
 
 function failCalibration(reason) {
+  track('calibration/failed-' + reason);
   Rec.finish('calibration-failed', { failReason: reason, calibration: calInfo(S.lastCal), samplesReceived: S.samples });
   stopSession();
   stopDemo();
@@ -109,7 +110,9 @@ function finishSession() {
   stopSession();
   stopDemo();
   const res = S.results;
-  const rec = Rec.finish(res.length >= plan.length ? 'completed' : 'stopped');
+  const outcome = res.length >= plan.length ? 'completed' : 'stopped';
+  const rec = Rec.finish(outcome);
+  track(`session/${outcome}${S.demo ? '-demo' : ''}`);
   lastRecord = rec;
   if (!res.length) { show('intro'); return; }
   $('logStatus').textContent = 'Log saved on this phone. Tap Export log to share it.';
@@ -185,6 +188,7 @@ function tick(dt) {
           S.lastCal = cal;
           if (!cal.ok) return failCalibration(cal.reason);
           S.cal = cal;
+          track('calibration/done');
           if (Rec.cur) Rec.cur.calibration = calInfo(cal, false);
           S.gateOn = false;
           S.trace = [];
@@ -389,6 +393,7 @@ function begin(demo) {
   Sound.init();
   speak('Starting.');
   S.demo = demo;
+  track(demo ? 'session/start-demo' : 'session/start');
   S.samples = 0; S.latest = null; smP.reset(); smR.reset();
   // Demo mode skips calibration: its simulated chest has a known range.
   if (demo) { startDemo(demoChest); S.cal = Core.demoCalibration(); startSession(true); return; }
@@ -407,18 +412,21 @@ $('stop').addEventListener('click', () => {
   if (S.results.length) finishSession();
   else {
     Rec.finish('stopped', { calibration: Rec.cur?.calibration ?? calInfo(S.lastCal) });
+    track(`session/stopped-before-first-hold${S.demo ? '-demo' : ''}`);
     stopSession(); stopDemo(); show('intro');
   }
 });
-$('recal').addEventListener('click', () => { Rec.event('recalibrate'); S.results = []; startCalibration(); });
+$('recal').addEventListener('click', () => { Rec.event('recalibrate'); track('calibration/restart'); S.results = []; startCalibration(); });
 
 let lastRecord = null;
 $('export').addEventListener('click', async () => {
   if (!lastRecord) return;
+  track('summary/export-log');
   const r = await exportLogs([lastRecord], 'breath-hold-' + lastRecord.id);
   if (r === 'downloaded') $('logStatus').textContent = 'Log files downloaded.';
 });
 $('again').addEventListener('click', () => {
+  track(S.demo ? 'session/again-demo' : 'session/again');
   Sound.init();
   speak('Starting.');
   if (S.demo) startDemo(demoChest);

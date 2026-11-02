@@ -1,5 +1,5 @@
 // The first screen: setup stays hidden until this passes. Core holds the rules that judge the results.
-import { $, settings, Sound, speak, keepAwake, releaseAwake, show } from './shared.js';
+import { $, settings, Sound, speak, keepAwake, releaseAwake, show, track } from './shared.js';
 
 const Caps = {
   facts: {},
@@ -164,7 +164,7 @@ async function runCheck() {
   Object.assign(facts, { motionPermission: undefined, motionError: undefined, motion: undefined, audioRunning: undefined, wakeLock: undefined, heard: undefined });
   Caps.readStatic();
   // No point asking for motion access that cannot work.
-  if (Caps.blocked()) { Caps.stage = 'done'; renderCheck(); return; }
+  if (Caps.blocked()) { Caps.stage = 'done'; trackCheck(); renderCheck(); return; }
 
   Sound.init();
   speak('Checking your phone.');
@@ -201,12 +201,21 @@ async function runCheck() {
   const state = Sound.ctx?.state;
   if (state) facts.audioRunning = (state !== 'suspended' && state !== 'closed') || window.speechSynthesis?.speaking === true;
   Caps.stage = 'done';
+  trackCheck();
   renderCheck();
   if (!Caps.blocked() && Caps.canPlay()) playTestSound();
 }
 
+// Counts the check's outcome and each problem it found, by id only.
+function trackCheck() {
+  const issues = Caps.issues().map(i => i.id);
+  track(issues.length ? 'check/done-with-issues' : 'check/done-no-issues');
+  for (const id of issues) track('check/issue-' + id);
+}
+
 function leaveCheck(demoOnly) {
   Caps.demoOnly = demoOnly;
+  track(demoOnly ? 'check/demo-only' : 'check/continue');
   $('demoOnly').hidden = !demoOnly;
   $('next').hidden = demoOnly;
   $('demoStart').hidden = !demoOnly;
@@ -223,9 +232,11 @@ $('checkDemo').addEventListener('click', () => leaveCheck(true));
 $('backToCheck').addEventListener('click', () => { Caps.stage = 'idle'; renderCheck(); show('check'); });
 $('soundAgain').addEventListener('click', () => { stopTestSound(); playTestSound(); });
 for (const [id, heard] of [['heardYes', true], ['heardNo', false]]) {
-  $(id).addEventListener('click', () => { stopTestSound(); Caps.facts.heard = heard; renderCheck(); });
+  $(id).addEventListener('click', () => { stopTestSound(); Caps.facts.heard = heard; track(heard ? 'check/sound-heard' : 'check/sound-not-heard'); renderCheck(); });
 }
 
 Caps.readStatic();
 Caps.watchVoices();
+// A phone that cannot run the app is told so without a tap, so count that here.
+if (Caps.blocked()) trackCheck();
 renderCheck();

@@ -85,6 +85,25 @@ share them: **Export log** on the summary screen, or **Export detailed logs** on
 share sheet (Files, AirDrop, WhatsApp, Mail…) with a `.json` and a `.csv` file. Nothing is uploaded
 automatically.
 
+## Usage counts
+
+The page counts visits with [GoatCounter](https://www.goatcounter.com) (site `dibh-coach`): no cookies and
+no personal data. Besides the page view, `track()` in `shared.js` sends anonymous events for each step of
+the journey, so the dashboard shows where people stop:
+
+| Event | When |
+|---|---|
+| `screen/<name>` | A screen opens: `setup`, `get-ready`, `history-demo`, `session`, `summary`, `phone-check` |
+| `check/done-no-issues`, `check/done-with-issues`, `check/issue-<id>` | The phone check ends, with each problem found |
+| `check/sound-heard`, `check/sound-not-heard` | The answer to the test sound |
+| `check/continue`, `check/demo-only` | How the phone check is left |
+| `session/start`, `session/again` | A session starts (`-demo` added in demo mode) |
+| `calibration/done`, `calibration/failed-<reason>`, `calibration/restart` | Calibration result |
+| `session/completed`, `session/stopped`, `session/stopped-before-first-hold` | How a session ends |
+| `summary/export-log` | Export log is tapped |
+
+No breathing data, levels or settings are sent. Visits from `localhost` are not counted.
+
 ## Log viewer
 
 `logviewer.py` turns exported logs into one self-contained HTML report with charts (standard-library

@@ -221,10 +221,33 @@ export async function exportLogs(recs, baseName) {
   return 'downloaded';
 }
 
+// ---------- Usage counts (GoatCounter) ----------
+// Counts a step of the user journey as an anonymous GoatCounter event. Nothing about the
+// breathing itself is sent. The counter script loads async, so earlier events wait for it;
+// if it is blocked they are dropped.
+const trackQueue = [];
+function sendTracked() {
+  const gc = window.goatcounter;
+  if (typeof gc?.count !== 'function') return;
+  for (const name of trackQueue.splice(0)) {
+    try { gc.count({ path: name, title: name, event: true }); } catch { /* ignore */ }
+  }
+}
+document.querySelector('script[data-goatcounter]')?.addEventListener('load', sendTracked);
+export function track(name) {
+  trackQueue.push(name);
+  sendTracked();
+}
+
 // ---------- Screens ----------
+// Screen ids in the markup, named as the screens are called in the app.
+const SCREEN_NAMES = { check: 'phone-check', intro: 'setup', ready: 'get-ready', more: 'history-demo', session: 'session', summary: 'summary' };
+let shown = 'check';
 export function show(id) {
-  for (const s of ['check', 'intro', 'ready', 'more', 'session', 'summary']) $(s).hidden = s !== id;
+  for (const s of Object.keys(SCREEN_NAMES)) $(s).hidden = s !== id;
   window.scrollTo(0, 0);
+  if (id !== shown) track('screen/' + SCREEN_NAMES[id]);
+  shown = id;
 }
 export function showError(html) { $('error').innerHTML = html; $('error').hidden = false; show('ready'); }
 export function hideError() { $('error').hidden = true; }
