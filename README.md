@@ -152,3 +152,7 @@ screen alone or the test can hide a sound problem.
 ```sh
 npm test
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 Amrut Joshi

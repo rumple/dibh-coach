@@ -1,6 +1,8 @@
 {
   "name": "dibh-coach",
   "private": true,
+  "license": "MIT",
+  "author": "Amrut Joshi",
   "description": "Breath hold practice app for radiotherapy patients, runs in the iPhone browser",
   "scripts": {
     "test": "node --test test/core.test.js && python3 -m unittest discover -s test",
